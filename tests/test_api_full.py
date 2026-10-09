@@ -398,3 +398,59 @@ def test_user_search_wildcard_injection_safe():
     assert res2.status_code == 200
     assert res2.json() == [], f"Expected empty for q=%%, got {res2.json()}"
 
+
+def test_username_validation_and_normalization():
+    """
+    Signup username rules:
+    - Must be 3-20 chars, [a-z0-9_] only (after lowercasing)
+    - Stored lowercase: "Avinay_123" -> "avinay_123"
+    - Bad formats rejected: "avinay@123" (@ not allowed), too short, too long
+    - Duplicate detection is case-insensitive
+    """
+    # Valid: mixed-case input stored as lowercase
+    res = client.post("/auth/signup", json={"username": "Avinay_123", "email": "avinay@test.com"})
+    assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.json()}"
+    assert res.json()["username"] == "avinay_123", "Should be stored lowercase"
+
+    # Valid: all-lowercase with underscore
+    res2 = client.post("/auth/signup", json={"username": "avinay_xyz", "email": "xyz@test.com"})
+    assert res2.status_code == 200
+
+    # Invalid: @ character not allowed
+    bad_at = client.post("/auth/signup", json={"username": "avinay@123", "email": "bad1@test.com"})
+    assert bad_at.status_code == 422, f"Expected 422 for 'avinay@123', got {bad_at.status_code}"
+
+    # Invalid: too short (< 3 chars)
+    bad_short = client.post("/auth/signup", json={"username": "ab", "email": "bad2@test.com"})
+    assert bad_short.status_code == 422, f"Expected 422 for 'ab', got {bad_short.status_code}"
+
+    # Invalid: too long (> 20 chars)
+    bad_long = client.post("/auth/signup", json={"username": "a" * 21, "email": "bad3@test.com"})
+    assert bad_long.status_code == 422, f"Expected 422 for 21-char name, got {bad_long.status_code}"
+
+    # Invalid: contains space
+    bad_space = client.post("/auth/signup", json={"username": "hello world", "email": "bad4@test.com"})
+    assert bad_space.status_code == 422
+
+    # Duplicate: "AVINAY_123" must collide with already-stored "avinay_123"
+    dup = client.post("/auth/signup", json={"username": "AVINAY_123", "email": "dup@test.com"})
+    assert dup.status_code == 400
+    assert "taken" in dup.json()["detail"].lower()
+
+
+def test_username_invite_case_insensitive():
+    """Username invites find users regardless of the case passed."""
+    client.post("/auth/signup", json={"username": "grp_admin", "email": "grp_admin@test.com"})
+    client.post("/auth/signup", json={"username": "target_user", "email": "target@test.com"})
+
+    g = client.post("/groups", json={"name": "CI Group"}, headers={"X-Dev-Username": "grp_admin"}).json()
+    gid = g["id"]
+
+    # Invite using mixed-case — should still find "target_user"
+    res = client.post(
+        f"/groups/{gid}/invite",
+        json={"method": "username", "username": "Target_User"},
+        headers={"X-Dev-Username": "grp_admin"}
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "added"

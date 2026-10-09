@@ -5,6 +5,7 @@ hybrid debt settlement, two-step payment confirmation, cancel rules, group chat,
 """
 
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
@@ -61,6 +62,29 @@ class UserSignup(BaseModel):
     username: str
     email: EmailStr
     firebase_uid: Optional[str] = None
+
+
+# 3-20 chars, lowercase letters / digits / underscore only
+USERNAME_RE = re.compile(r'^[a-z0-9_]{3,20}$')
+
+
+def normalize_username(raw: str) -> str:
+    """Lowercase and strip whitespace; does NOT validate format."""
+    return raw.strip().lower()
+
+
+def validate_username(raw: str) -> str:
+    """Normalize then assert format; raises HTTPException 422 on violation."""
+    norm = normalize_username(raw)
+    if not USERNAME_RE.match(norm):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Username must be 3-20 characters and contain only "
+                "lowercase letters, digits, or underscores (a-z, 0-9, _)."
+            )
+        )
+    return norm
 
 
 class GroupCreate(BaseModel):
@@ -156,13 +180,17 @@ def _load_algo_inputs(group_id: int, session: Session):
 @app.post("/auth/signup")
 def signup(payload: UserSignup, session: Session = Depends(get_session)):
     """Registers or sets up a user profile and claims any pending email invites."""
-    # Check duplicate username
-    existing_username = session.exec(select(User).where(User.username == payload.username)).first()
+    # Normalize and validate username (stored lowercase, [a-z0-9_], 3-20 chars)
+    username = validate_username(payload.username)
+
+    # Case-insensitive uniqueness check (usernames are always stored lowercase,
+    # so a plain equality check on the normalized value is sufficient)
+    existing_username = session.exec(select(User).where(User.username == username)).first()
     if existing_username:
         raise HTTPException(status_code=400, detail="Username is already taken")
 
     user = User(
-        username=payload.username,
+        username=username,
         email=payload.email,
         firebase_uid=payload.firebase_uid
     )
@@ -211,7 +239,7 @@ def get_me(current_user: User = Depends(get_current_user), session: Session = De
 @app.get("/users/search")
 def search_users(q: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Search users by username prefix. Returns only {id, username} — never email."""
-    q = q.strip()
+    q = q.strip().lower().lstrip('@')  # normalize: lowercase, strip leading @
     if len(q) < 2:
         return []
     users = session.exec(
@@ -377,9 +405,10 @@ def invite_member(
     elif payload.method == "username":
         if not payload.username:
             raise HTTPException(400, "Username is required for username invite")
-        target_user = session.exec(select(User).where(User.username == payload.username)).first()
+        lookup = normalize_username(payload.username)  # case-insensitive, strip @
+        target_user = session.exec(select(User).where(User.username == lookup)).first()
         if not target_user:
-            raise HTTPException(404, f"User with username '{payload.username}' not found")
+            raise HTTPException(404, f"User '@{lookup}' not found")
         
         existing_mem = session.exec(select(GroupMember).where(
             GroupMember.group_id == group_id, GroupMember.user_id == target_user.id

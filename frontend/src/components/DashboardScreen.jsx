@@ -12,14 +12,19 @@ const INPUT =
   'focus:outline-none focus:ring-2 focus:ring-olive-primary placeholder:text-slate-400';
 
 // ─── Step 1: Group details ────────────────────────────────────────────────────
-function StepGroupDetails({ onNext, defaultUpi }) {
-  const [name, setName] = useState('');
-  const [upi, setUpi] = useState(defaultUpi || '');
+function StepGroupDetails({ groupName, setGroupName, adminUpi, setAdminUpi, onNext }) {
   const nameRef = useRef(null);
   useEffect(() => { nameRef.current?.focus(); }, []);
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (groupName.trim()) {
+      onNext();
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full">
+    <form onSubmit={handleSubmit} className="flex flex-col h-full">
       <h2 className="text-3xl font-black text-slate-900 leading-tight mb-1">
         Create your<br />group
       </h2>
@@ -30,14 +35,14 @@ function StepGroupDetails({ onNext, defaultUpi }) {
       <div className="space-y-5 flex-1">
         <div>
           <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-            Group name
+            Group name *
           </label>
           <input
             ref={nameRef}
             className={INPUT}
             placeholder="Weekend in Goa"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
           />
         </div>
 
@@ -48,8 +53,8 @@ function StepGroupDetails({ onNext, defaultUpi }) {
           <input
             className={INPUT}
             placeholder="name@upi"
-            value={upi}
-            onChange={(e) => setUpi(e.target.value)}
+            value={adminUpi}
+            onChange={(e) => setAdminUpi(e.target.value)}
           />
           <p className="text-[11px] text-slate-400 mt-1.5">
             UPI IDs are only used to create payment links. Keep them accurate.
@@ -58,137 +63,229 @@ function StepGroupDetails({ onNext, defaultUpi }) {
       </div>
 
       <button
-        onClick={() => onNext(name.trim(), upi.trim())}
-        disabled={!name.trim()}
+        type="submit"
+        disabled={!groupName.trim()}
         className="mt-8 w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
                    text-white font-bold text-base transition disabled:opacity-40 active:scale-[0.99]"
       >
         Next →
       </button>
-    </div>
+    </form>
   );
 }
 
 // ─── Step 2: Invite members ───────────────────────────────────────────────────
-function StepInviteMembers({ groupId, joinLinkUrl, onDone }) {
-  const [method, setMethod] = useState('username');
+function StepInviteMembers({
+  currentUser,
+  chips,
+  setChips,
+  onSubmitCreate,
+  submitting,
+  submitError,
+}) {
+  const [method, setMethod] = useState('username'); // 'username' | 'email' | 'join_link'
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [email, setEmail] = useState('');
-  const [link, setLink] = useState(joinLinkUrl || '');
-  const [copied, setCopied] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState([]); // list of {label, msg}
-  const [successes, setSuccesses] = useState([]);
+  const [searchError, setSearchError] = useState('');
+  const [noUserFound, setNoUserFound] = useState(false);
+  const [searchedName, setSearchedName] = useState('');
 
-  // Auto-generate join link when tab is opened
+  const [emailInput, setEmailInput] = useState('');
+  const [emailError, setEmailError] = useState('');
+
+  const [inputError, setInputError] = useState('');
+
+  // 250ms debounced search for username
   useEffect(() => {
-    if (method === 'join_link' && !link) generateLink();
-  }, [method]); // eslint-disable-line
+    const raw = query.trim().replace(/^@+/, '');
+    setInputError('');
+    if (raw.length < 2) {
+      setResults([]);
+      setSearchError('');
+      setNoUserFound(false);
+      setSearching(false);
+      return;
+    }
 
-  const generateLink = async () => {
-    try {
-      setLoading(true);
-      const data = await api.inviteMember(groupId, { method: 'join_link' });
-      const url = `${window.location.origin}/#join=${data.join_token}`;
-      setLink(url);
-    } catch (e) {
-      addError('Join link', e.message);
-    } finally {
-      setLoading(false);
+    setSearching(true);
+    setSearchError('');
+    setNoUserFound(false);
+
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api.searchUsers(raw);
+        setResults(data || []);
+        setSearchedName(raw);
+        setNoUserFound(!data || data.length === 0);
+      } catch (err) {
+        setSearchError(err.message || 'Error searching users');
+        setResults([]);
+        setNoUserFound(false);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Remove a chip
+  const removeChip = (indexToRemove) => {
+    setChips((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  // Add a username chip
+  const handleAddUsername = (uname) => {
+    setInputError('');
+    const clean = uname.trim().replace(/^@+/, '');
+    if (!clean) return;
+
+    // Block adding yourself
+    if (currentUser?.username && clean.toLowerCase() === currentUser.username.toLowerCase()) {
+      setInputError('You cannot add yourself (you will be the group admin)');
+      return;
+    }
+
+    // Block duplicates
+    const alreadyExists = chips.some(
+      (c) => c.type === 'username' && c.value.toLowerCase() === clean.toLowerCase()
+    );
+    if (alreadyExists) {
+      setInputError(`@${clean} is already in the invite list`);
+      return;
+    }
+
+    setChips((prev) => [
+      ...prev,
+      { type: 'username', value: clean, label: `@${clean}` },
+    ]);
+    setQuery('');
+    setResults([]);
+    setNoUserFound(false);
+  };
+
+  // On Enter or Add button in username input
+  const handleUsernameSubmit = (e) => {
+    if (e) e.preventDefault();
+    const clean = query.trim().replace(/^@+/, '');
+    if (!clean) return;
+
+    // Check if there is an exact match in results
+    const exactMatch = results.find(
+      (r) => r.username.toLowerCase() === clean.toLowerCase()
+    );
+    if (exactMatch) {
+      handleAddUsername(exactMatch.username);
+    } else if (results.length === 1) {
+      handleAddUsername(results[0].username);
+    } else {
+      handleAddUsername(clean);
     }
   };
 
-  const addError = (label, msg) =>
-    setErrors((prev) => [...prev, { label, msg }]);
-  const addSuccess = (msg) => setSuccesses((prev) => [...prev, msg]);
-
-  const handleSearch = async (q) => {
-    setQuery(q);
-    if (q.length < 2) { setResults([]); return; }
-    try {
-      setSearching(true);
-      setResults(await api.searchUsers(q));
-    } catch { /* ignore */ } finally { setSearching(false); }
-  };
-
-  const handleAddByUsername = async (uname) => {
-    try {
-      setLoading(true);
-      await api.inviteMember(groupId, { method: 'username', username: uname });
-      addSuccess(`@${uname} added ✓`);
-      setQuery(''); setResults([]);
-    } catch (e) {
-      addError(`@${uname}`, e.message);
-    } finally { setLoading(false); }
-  };
-
-  const handleSendEmail = async (e) => {
+  // Add an email chip
+  const handleAddEmail = (e) => {
     e.preventDefault();
-    const addr = email.trim();
-    if (!addr) return;
-    try {
-      setLoading(true);
-      await api.inviteMember(groupId, { method: 'email', email: addr });
-      addSuccess(`Invite sent to ${addr} ✓`);
-      setEmail('');
-    } catch (err) {
-      addError(addr, err.message);
-    } finally { setLoading(false); }
-  };
+    setEmailError('');
+    const cleanEmail = emailInput.trim();
+    if (!cleanEmail) return;
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setEmailError('Please enter a valid email address');
+      return;
+    }
+
+    // Block duplicates
+    const alreadyExists = chips.some(
+      (c) => c.type === 'email' && c.value.toLowerCase() === cleanEmail.toLowerCase()
+    );
+    if (alreadyExists) {
+      setEmailError(`${cleanEmail} is already in the invite list`);
+      return;
+    }
+
+    setChips((prev) => [
+      ...prev,
+      { type: 'email', value: cleanEmail, label: `${cleanEmail} (pending)` },
+    ]);
+    setEmailInput('');
   };
 
   const TABS = [
     { id: 'username', label: 'Username', icon: AtSign },
-    { id: 'join_link', label: 'Link',     icon: Link2  },
-    { id: 'email',    label: 'Email',     icon: Mail   },
+    { id: 'email', label: 'Email', icon: Mail },
+    { id: 'join_link', label: 'Link', icon: Link2 },
   ];
+
+  const inviteCount = chips.length;
+  const buttonLabel = submitting
+    ? 'Creating group…'
+    : inviteCount > 0
+    ? `Create group + ${inviteCount} invite${inviteCount > 1 ? 's' : ''}`
+    : 'Create group';
 
   return (
     <div className="flex flex-col h-full">
       <h2 className="text-3xl font-black text-slate-900 leading-tight mb-1">
         Invite members
       </h2>
-      <p className="text-sm text-slate-500 mb-6">
+      <p className="text-sm text-slate-500 mb-5">
         Add people now, or skip and invite later from the Members tab.
       </p>
 
-      {/* Successes */}
-      {successes.length > 0 && (
-        <div className="mb-4 space-y-1">
-          {successes.map((s, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs font-semibold text-emerald-700
-                                    bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-              <Check className="w-3.5 h-3.5 flex-shrink-0" /> {s}
-            </div>
-          ))}
+      {/* Added Chips List */}
+      {chips.length > 0 && (
+        <div className="mb-4 p-3 bg-white border border-slate-200 rounded-2xl">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+              Added ({chips.length})
+            </span>
+            <button
+              type="button"
+              onClick={() => setChips([])}
+              className="text-[11px] font-semibold text-slate-400 hover:text-red-600 transition"
+            >
+              Clear all
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+            {chips.map((chip, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-olive-50 border border-olive-200 text-olive-900 rounded-xl text-xs font-semibold"
+              >
+                <span>{chip.label}</span>
+                <button
+                  type="button"
+                  onClick={() => removeChip(idx)}
+                  className="text-olive-700 hover:text-red-600 font-bold ml-0.5"
+                  title="Remove"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Errors */}
-      {errors.length > 0 && (
-        <div className="mb-4 space-y-1">
-          {errors.map((err, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs text-red-700
-                                    bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <span><span className="font-bold">{err.label}:</span> {err.msg}</span>
-            </div>
-          ))}
+      {/* Global submit error */}
+      {submitError && (
+        <div className="mb-4 flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>{submitError}</span>
         </div>
       )}
 
-      {/* Method tabs */}
-      <div className="flex gap-1 p-1 bg-white rounded-2xl border border-slate-200 mb-5">
+      {/* Method Tabs */}
+      <div className="flex gap-1 p-1 bg-white rounded-2xl border border-slate-200 mb-4">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            type="button"
             onClick={() => setMethod(id)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition
               ${method === id
@@ -200,34 +297,73 @@ function StepInviteMembers({ groupId, joinLinkUrl, onDone }) {
         ))}
       </div>
 
-      {/* Panel body */}
+      {/* Tab Contents */}
       <div className="flex-1">
-        {/* — By Username — */}
+        {/* — 1. Username Tab — */}
         {method === 'username' && (
           <div className="space-y-3">
-            <div className="relative">
-              <input
-                className={INPUT + ' pl-10'}
-                placeholder="Search by username…"
-                value={query}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-            </div>
-            {searching && (
-              <p className="text-xs text-slate-400 italic">Searching…</p>
+            <form onSubmit={handleUsernameSubmit} className="relative flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  className={INPUT + ' pl-10 pr-4'}
+                  placeholder="Type username (e.g. rahul)…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+              </div>
+              {query.trim().length >= 2 && (
+                <button
+                  type="submit"
+                  className="px-4 py-3 bg-olive-primary hover:bg-olive-700 text-white text-xs font-bold rounded-2xl transition"
+                >
+                  Add
+                </button>
+              )}
+            </form>
+
+            {inputError && (
+              <p className="text-xs text-red-600 font-medium px-1">{inputError}</p>
             )}
-            {results.length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden max-h-44 overflow-y-auto">
+
+            {searchError && (
+              <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl p-2.5">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{searchError}</span>
+              </div>
+            )}
+
+            {searching && (
+              <p className="text-xs text-slate-400 italic px-1">Searching users…</p>
+            )}
+
+            {noUserFound && query.trim().length >= 2 && !searching && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1">
+                <p className="font-bold">No user named @{searchedName}.</p>
+                <p className="text-amber-700">
+                  They need to sign in to Debt-Settle once first, or invite by email or link instead.
+                </p>
+              </div>
+            )}
+
+            {results.length > 0 && !searching && (
+              <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden max-h-44 overflow-y-auto shadow-sm">
                 {results.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between px-4 py-2.5">
+                  <div
+                    key={u.id}
+                    onClick={() => handleAddUsername(u.username)}
+                    className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 cursor-pointer transition"
+                  >
                     <span className="text-sm font-semibold text-slate-800">@{u.username}</span>
                     <button
-                      onClick={() => handleAddByUsername(u.username)}
-                      disabled={loading}
-                      className="px-3 py-1 bg-olive-primary text-white text-xs font-bold rounded-xl transition hover:bg-olive-700 disabled:opacity-50"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAddUsername(u.username);
+                      }}
+                      className="px-3 py-1 bg-olive-primary text-white text-xs font-bold rounded-xl transition hover:bg-olive-700"
                     >
-                      Add
+                      + Add
                     </button>
                   </div>
                 ))}
@@ -236,108 +372,272 @@ function StepInviteMembers({ groupId, joinLinkUrl, onDone }) {
           </div>
         )}
 
-        {/* — Join Link — */}
-        {method === 'join_link' && (
-          <div className="space-y-3">
-            {loading && !link && (
-              <p className="text-xs text-slate-400 italic">Generating link…</p>
-            )}
-            {link ? (
-              <>
-                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-4 py-3">
-                  <input
-                    readOnly
-                    value={link}
-                    className="flex-1 text-xs text-slate-700 bg-transparent focus:outline-none truncate"
-                  />
-                  <button
-                    onClick={copyLink}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-xl transition hover:bg-slate-700"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Anyone signed into Debt-Settle can open this link to join instantly.
-                </p>
-              </>
-            ) : (
-              <button
-                onClick={generateLink}
-                disabled={loading}
-                className="w-full py-3 rounded-2xl border-2 border-dashed border-olive-300 text-olive-primary text-sm font-bold hover:bg-olive-50 transition"
-              >
-                Generate shareable link
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* — By Email — */}
+        {/* — 2. Email Tab — */}
         {method === 'email' && (
-          <form onSubmit={handleSendEmail} className="space-y-3">
-            <input
-              type="email"
-              required
-              className={INPUT}
-              placeholder="friend@gmail.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <p className="text-[11px] text-slate-400">
+          <form onSubmit={handleAddEmail} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="email"
+                className={INPUT}
+                placeholder="friend@gmail.com"
+                value={emailInput}
+                onChange={(e) => {
+                  setEmailInput(e.target.value);
+                  setEmailError('');
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!emailInput.trim()}
+                className="px-5 py-3 bg-olive-primary hover:bg-olive-700 text-white font-bold text-xs rounded-2xl transition disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+            {emailError && (
+              <p className="text-xs text-red-600 font-medium px-1">{emailError}</p>
+            )}
+            <p className="text-[11px] text-slate-400 px-1">
               They'll be auto-added to this group when they sign up with this email.
             </p>
-            <button
-              type="submit"
-              disabled={loading || !email.trim()}
-              className="w-full py-3 rounded-2xl bg-olive-primary text-white font-bold text-sm transition hover:bg-olive-700 disabled:opacity-50"
-            >
-              {loading ? 'Sending…' : 'Send Invite'}
-            </button>
           </form>
+        )}
+
+        {/* — 3. Link Tab — */}
+        {method === 'join_link' && (
+          <div className="p-4 bg-white border border-slate-200 rounded-2xl text-center space-y-2">
+            <div className="w-10 h-10 rounded-full bg-olive-50 text-olive-primary flex items-center justify-center mx-auto">
+              <Link2 className="w-5 h-5" />
+            </div>
+            <p className="text-xs font-bold text-slate-800">
+              Your join link will appear after the group is created.
+            </p>
+            <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+              Once you tap &quot;Create group&quot;, a 1-tap invite link will be generated for you to copy and share.
+            </p>
+          </div>
         )}
       </div>
 
-      {/* Footer */}
+      {/* Submit Create Group button */}
       <button
-        onClick={onDone}
-        className="mt-8 w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
-                   text-white font-bold text-base transition active:scale-[0.99]"
+        type="button"
+        onClick={onSubmitCreate}
+        disabled={submitting}
+        className="mt-6 w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
+                   text-white font-bold text-base transition disabled:opacity-50 active:scale-[0.99] shadow-md flex items-center justify-center gap-2"
       >
-        Open Group →
-      </button>
-      <button
-        onClick={onDone}
-        className="mt-2 w-full py-2 text-sm text-slate-500 hover:text-slate-700 font-semibold"
-      >
-        Invite later
+        {submitting && <RefreshCw className="w-4 h-4 animate-spin" />}
+        <span>{buttonLabel}</span>
       </button>
     </div>
   );
 }
 
-// ─── Create Group Modal (2-step) ──────────────────────────────────────────────
+// ─── Step 3: Result Summary Screen ───────────────────────────────────────────
+function StepResultSummary({ summary, onOpenGroup }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyLink = () => {
+    if (!summary?.joinLink) return;
+    navigator.clipboard.writeText(summary.joinLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex flex-col h-full space-y-5">
+      <div>
+        <span className="text-[11px] font-bold text-olive-primary uppercase tracking-wider block mb-1">
+          Group Created Successfully
+        </span>
+        <h2 className="text-3xl font-black text-slate-900 leading-tight">
+          {summary.groupName}
+        </h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Here is your invite summary:
+        </p>
+      </div>
+
+      {/* Added Members */}
+      {summary.added && summary.added.length > 0 && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-1.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>Added to group ({summary.added.length})</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {summary.added.map((uname, idx) => (
+              <span
+                key={idx}
+                className="px-2.5 py-0.5 bg-emerald-100 text-emerald-900 text-xs font-semibold rounded-lg"
+              >
+                {uname}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Pending Email Invites */}
+      {summary.pending && summary.pending.length > 0 && (
+        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl space-y-1.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-blue-800">
+            <Mail className="w-4 h-4 text-blue-600" />
+            <span>Email invites pending signup ({summary.pending.length})</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {summary.pending.map((em, idx) => (
+              <span
+                key={idx}
+                className="px-2.5 py-0.5 bg-blue-100 text-blue-900 text-xs font-semibold rounded-lg"
+              >
+                {em}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Failures */}
+      {summary.failures && summary.failures.length > 0 && (
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600" />
+            <span>Failed invites ({summary.failures.length})</span>
+          </div>
+          <ul className="text-xs text-red-700 divide-y divide-red-100">
+            {summary.failures.map((f, idx) => (
+              <li key={idx} className="py-1 flex items-start justify-between gap-2">
+                <span className="font-bold">{f.target}</span>
+                <span className="text-red-600 text-right">{f.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Join Link */}
+      {summary.joinLink && (
+        <div className="space-y-2 pt-1">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            Shareable Join Link
+          </label>
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-3.5 py-2.5">
+            <input
+              readOnly
+              value={summary.joinLink}
+              className="flex-1 text-xs text-slate-700 bg-transparent focus:outline-none truncate"
+            />
+            <button
+              type="button"
+              onClick={copyLink}
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-xl transition hover:bg-slate-700 flex-shrink-0"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? 'Copied!' : 'Copy'}</span>
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Anyone signed into Debt-Settle can open this link to join instantly.
+          </p>
+        </div>
+      )}
+
+      {/* Open Group CTA */}
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={onOpenGroup}
+          className="w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
+                     text-white font-bold text-base transition active:scale-[0.99] shadow-md flex items-center justify-center gap-2"
+        >
+          <span>Open group →</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Create Group Modal (Flow Controller) ────────────────────────────────────
 function CreateGroupModal({ user, onClose, onCreated }) {
-  const [step, setStep] = useState(1); // 1 | 2
-  const [newGroupId, setNewGroupId] = useState(null);
-  const [joinLinkUrl, setJoinLinkUrl] = useState('');
+  const [step, setStep] = useState(1); // 1 = Details, 2 = Invites, 3 = Summary
+  const [groupName, setGroupName] = useState('');
+  const [adminUpi, setAdminUpi] = useState(
+    localStorage.getItem('debt_settle_last_upi') || ''
+  );
+  const [chips, setChips] = useState([]); // [{ type: 'username'|'email', value, label }]
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [summary, setSummary] = useState(null);
 
-  // Persist last-used UPI across sessions
-  const defaultUpi = localStorage.getItem('debt_settle_last_upi') || '';
+  // Step 1 -> Step 2: NO API call, purely local state progression!
+  const handleNextToStep2 = () => {
+    if (!groupName.trim()) return;
+    setStep(2);
+  };
 
-  const handleStep1 = async (name, upi) => {
+  // Step 2 Final Submit: Creates group, sends invites, fetches join link
+  const handleFinalCreate = async () => {
     try {
       setSubmitting(true);
-      setError('');
-      const group = await api.createGroup(name, upi || null);
-      if (upi) localStorage.setItem('debt_settle_last_upi', upi);
-      setNewGroupId(group.id);
-      setStep(2);
-    } catch (e) {
-      setError(e.message);
+      setSubmitError('');
+
+      // 1. Create Group
+      const newGroup = await api.createGroup(groupName.trim(), adminUpi.trim() || null);
+      if (adminUpi.trim()) {
+        localStorage.setItem('debt_settle_last_upi', adminUpi.trim());
+      }
+
+      // 2. Process invites
+      const addedList = [];
+      const pendingList = [];
+      const failuresList = [];
+
+      for (const chip of chips) {
+        try {
+          if (chip.type === 'username') {
+            await api.inviteMember(newGroup.id, {
+              method: 'username',
+              username: chip.value,
+            });
+            addedList.push(`@${chip.value}`);
+          } else if (chip.type === 'email') {
+            await api.inviteMember(newGroup.id, {
+              method: 'email',
+              email: chip.value,
+            });
+            pendingList.push(chip.value);
+          }
+        } catch (err) {
+          failuresList.push({
+            target: chip.type === 'username' ? `@${chip.value}` : chip.value,
+            reason: err.message || 'Failed to send invite',
+          });
+        }
+      }
+
+      // 3. Generate join link
+      let joinLink = '';
+      try {
+        const linkRes = await api.inviteMember(newGroup.id, { method: 'join_link' });
+        joinLink = `${window.location.origin}/#join=${linkRes.join_token}`;
+      } catch (e) {
+        // join link fallback if error
+      }
+
+      setSummary({
+        groupId: newGroup.id,
+        groupName: newGroup.name,
+        added: addedList,
+        pending: pendingList,
+        failures: failuresList,
+        joinLink,
+      });
+
+      setStep(3);
+    } catch (err) {
+      setSubmitError(err.message || 'Failed to create group');
     } finally {
       setSubmitting(false);
     }
@@ -345,54 +645,69 @@ function CreateGroupModal({ user, onClose, onCreated }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* Sheet on mobile, centered card on desktop */}
       <div className="bg-cream-100 w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl shadow-2xl
                       flex flex-col p-6 pb-8 max-h-[92vh] overflow-y-auto">
         {/* Top bar */}
-        <div className="flex items-center justify-between mb-6">
-          {step === 2 ? (
+        <div className="flex items-center justify-between mb-5">
+          {step === 2 && (
             <button
+              type="button"
               onClick={() => setStep(1)}
               className="flex items-center gap-1 text-sm font-bold text-slate-600 hover:text-slate-900"
             >
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
-          ) : (
+          )}
+          {step === 1 && (
             <span className="text-xs font-bold text-olive-primary uppercase tracking-widest">
               DEBT-SETTLE
             </span>
           )}
+          {step === 3 && (
+            <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest">
+              COMPLETED
+            </span>
+          )}
           <button
-            onClick={onClose}
+            type="button"
+            onClick={() => {
+              if (step === 3 && summary?.groupId) {
+                onCreated(summary.groupId);
+              } else {
+                onClose();
+              }
+            }}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800 transition"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {error && (
-          <div className="mb-4 flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
-          </div>
-        )}
-
-        {submitting && (
-          <div className="mb-4 flex items-center gap-2 text-xs text-olive-700 bg-olive-50 border border-olive-200 rounded-xl px-3 py-2">
-            <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" /> Creating group…
-          </div>
-        )}
-
         {step === 1 && (
           <StepGroupDetails
-            onNext={handleStep1}
-            defaultUpi={defaultUpi}
+            groupName={groupName}
+            setGroupName={setGroupName}
+            adminUpi={adminUpi}
+            setAdminUpi={setAdminUpi}
+            onNext={handleNextToStep2}
           />
         )}
-        {step === 2 && newGroupId && (
+
+        {step === 2 && (
           <StepInviteMembers
-            groupId={newGroupId}
-            joinLinkUrl={joinLinkUrl}
-            onDone={() => { onCreated(newGroupId); }}
+            currentUser={user}
+            chips={chips}
+            setChips={setChips}
+            onSubmitCreate={handleFinalCreate}
+            submitting={submitting}
+            submitError={submitError}
+          />
+        )}
+
+        {step === 3 && summary && (
+          <StepResultSummary
+            summary={summary}
+            onOpenGroup={() => onCreated(summary.groupId)}
           />
         )}
       </div>
@@ -402,10 +717,10 @@ function CreateGroupModal({ user, onClose, onCreated }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function DashboardScreen({ user, onSelectGroup }) {
-  const [groups, setGroups]           = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState('');
-  const [showCreate, setShowCreate]   = useState(false);
+  const [groups, setGroups]         = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState('');
+  const [showCreate, setShowCreate] = useState(false);
 
   const fetchGroups = async () => {
     try {
