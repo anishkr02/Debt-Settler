@@ -236,15 +236,12 @@ export default function MembersTab({ group, onMemberUpdated }) {
 
                 {searchResults.length > 0 && (
                   <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-40 overflow-y-auto">
-                    {searchResults.map((u) => (
+                  {searchResults.map((u) => (
                       <div
                         key={u.id}
                         className="p-2.5 flex items-center justify-between hover:bg-slate-50 transition text-xs"
                       >
-                        <div>
-                          <span className="font-bold text-slate-800 block">@{u.username}</span>
-                          <span className="text-[11px] text-slate-400">{u.email}</span>
-                        </div>
+                        <span className="font-bold text-slate-800">@{u.username}</span>
                         <button
                           type="button"
                           onClick={() => handleInviteUsername(u.username)}

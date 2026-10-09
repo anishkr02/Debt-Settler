@@ -361,3 +361,40 @@ def test_group_chat_and_retention():
         assert session.get(Group, g_id) is None
         # Verify messages are cleaned up
         assert len(session.exec(select(ChatMessageDB).where(ChatMessageDB.group_id == g_id)).all()) == 0
+
+
+def test_user_search_no_email_leaked():
+    """GET /users/search must never return an email field."""
+    client.post("/auth/signup", json={"username": "searchable", "email": "secret@private.com"})
+    # Another user searches for them
+    client.post("/auth/signup", json={"username": "searcher", "email": "searcher@example.com"})
+
+    res = client.get("/users/search?q=sea", headers={"X-Dev-Username": "searcher"})
+    assert res.status_code == 200
+    results = res.json()
+    assert len(results) >= 1
+    for r in results:
+        assert "email" not in r, f"email field leaked in search result: {r}"
+        assert "id" in r
+        assert "username" in r
+
+
+def test_user_search_wildcard_injection_safe():
+    """q=%% must not bypass LIKE escaping and dump every user."""
+    # Create 3 known users
+    for name in ["wildcard_a", "wildcard_b", "wildcard_c"]:
+        client.post("/auth/signup", json={"username": name, "email": f"{name}@test.com"})
+    # One more user to act as the requester
+    client.post("/auth/signup", json={"username": "requester", "email": "req@test.com"})
+
+    # A bare %% without autoescape would match every row; with autoescape it should return 0
+    res = client.get("/users/search?q=%%25%%25", headers={"X-Dev-Username": "requester"})
+    assert res.status_code == 200
+    # The literal string "%%25%%25" won't match any username — result should be empty
+    assert res.json() == [], f"Expected empty, got {res.json()}"
+
+    # Also try the raw double-percent in its URL-encoded form
+    res2 = client.get("/users/search?q=%25%25", headers={"X-Dev-Username": "requester"})
+    assert res2.status_code == 200
+    assert res2.json() == [], f"Expected empty for q=%%, got {res2.json()}"
+

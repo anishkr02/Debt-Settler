@@ -21,8 +21,15 @@ export default {
           950: '#17250e',
           primary: '#3B620C',
         },
+        cream: {
+          DEFAULT: '#F5F0E8',
+          50: '#faf8f4',
+          100: '#F5F0E8',
+          200: '#ede4d2',
+        },
       }
     },
   },
   plugins: [],
 }
+

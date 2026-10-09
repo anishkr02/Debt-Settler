@@ -210,11 +210,16 @@ def get_me(current_user: User = Depends(get_current_user), session: Session = De
 
 @app.get("/users/search")
 def search_users(q: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    """Search users by username prefix."""
-    if not q or len(q.strip()) < 2:
+    """Search users by username prefix. Returns only {id, username} — never email."""
+    q = q.strip()
+    if len(q) < 2:
         return []
-    users = session.exec(select(User).where(User.username.startswith(q.strip()))).all()
-    return [{"id": u.id, "username": u.username, "email": u.email} for u in users]
+    users = session.exec(
+        select(User)
+        .where(User.username.startswith(q, autoescape=True))
+        .limit(10)
+    ).all()
+    return [{"id": u.id, "username": u.username} for u in users]
 
 
 # -------------------------------------------------------------
