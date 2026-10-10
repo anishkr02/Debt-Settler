@@ -10,26 +10,26 @@ FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 
 # Firebase Admin SDK initialization if available and needed
 _firebase_initialized = False
-if not DEV_MODE and FIREBASE_PROJECT_ID:
+cred_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
+
+if cred_path and os.path.exists(cred_path):
     try:
         import firebase_admin
         from firebase_admin import auth as fb_auth, credentials
         if not firebase_admin._apps:
-            cred_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
-            if cred_path and os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
-                firebase_admin.initialize_app(cred)
-            else:
-                raise FileNotFoundError(
-                    f"FIREBASE_SERVICE_ACCOUNT_PATH is not set or the file "
-                    f"doesn't exist (got: '{cred_path}'). Download the key "
-                    f"from Firebase Console > Project settings > Service "
-                    f"accounts > Generate new private key, then point "
-                    f"FIREBASE_SERVICE_ACCOUNT_PATH at it in .env"
-                )
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
         _firebase_initialized = True
     except Exception as e:
         print(f"Warning: Firebase Admin initialization failed: {e}")
+elif not DEV_MODE and FIREBASE_PROJECT_ID:
+    raise FileNotFoundError(
+        f"FIREBASE_SERVICE_ACCOUNT_PATH is not set or the file "
+        f"doesn't exist (got: '{cred_path}'). Download the key "
+        f"from Firebase Console > Project settings > Service "
+        f"accounts > Generate new private key, then point "
+        f"FIREBASE_SERVICE_ACCOUNT_PATH at it in .env"
+    )
 
 
 def _get_or_create_dev_user(session: Session, dev_identifier: str) -> User:
@@ -73,7 +73,7 @@ async def get_current_user(
     """
     Derives the authenticated User strictly server-side.
     In DEV_MODE: accepts 'X-Dev-User-Id' or 'X-Dev-Username' or Bearer dev_<name>.
-    In Production: verifies Firebase JWT ID token.
+    In Production / Firebase Auth: verifies Firebase JWT ID token.
     """
     # 1. Check for Dev Headers
     dev_user_id = request.headers.get("X-Dev-User-Id") or request.headers.get("X-Dev-Username")
@@ -95,30 +95,67 @@ async def get_current_user(
         dev_name = token[4:]
         return _get_or_create_dev_user(session, dev_name)
 
-    # 3. Verify Firebase Token (Production)
+    # 3. Verify Firebase Token
     if _firebase_initialized:
         try:
+            import re
             from firebase_admin import auth as fb_auth
+            from db_models import Invite
+
             decoded_token = fb_auth.verify_id_token(token)
             uid = decoded_token.get("uid")
             email = decoded_token.get("email", "")
 
             user = session.exec(select(User).where(User.firebase_uid == uid)).first()
+            if not user and email:
+                user = session.exec(select(User).where(User.email == email)).first()
+                if user:
+                    user.firebase_uid = uid
+                    session.add(user)
+                    session.commit()
+                    session.refresh(user)
+
             if not user:
-                # First-time user sign in
+                # First-time user sign in via Firebase: sanitize username [a-z0-9_]{3,20}
+                raw_base = email.split("@")[0] if email else f"user_{uid[:6]}"
+                base_name = re.sub(r'[^a-z0-9_]', '_', raw_base.lower())[:15]
+                if len(base_name) < 3:
+                    base_name = f"user_{uid[:6].lower()}"
+
+                candidate = base_name
+                count = 1
+                while session.exec(select(User).where(User.username == candidate)).first():
+                    candidate = f"{base_name[:12]}_{count}"
+                    count += 1
+
                 user = User(
                     firebase_uid=uid,
-                    email=email,
-                    username=email.split("@")[0] if email else f"user_{uid[:6]}"
+                    email=email or f"{candidate}@example.com",
+                    username=candidate
                 )
                 session.add(user)
                 session.commit()
                 session.refresh(user)
+
+                # Claim any pending email invites
+                if email:
+                    pending_invites = session.exec(
+                        select(Invite).where(Invite.invited_email == email, Invite.status == "pending")
+                    ).all()
+                    for inv in pending_invites:
+                        existing_mem = session.exec(select(GroupMember).where(
+                            GroupMember.group_id == inv.group_id, GroupMember.user_id == user.id
+                        )).first()
+                        if not existing_mem:
+                            session.add(GroupMember(group_id=inv.group_id, user_id=user.id, is_admin=False))
+                        inv.status = "accepted"
+                    session.commit()
+
             return user
         except Exception as e:
             raise HTTPException(status_code=401, detail=f"Invalid Firebase authentication token: {str(e)}")
 
-    raise HTTPException(status_code=401, detail="Authentication failed")
+    raise HTTPException(status_code=401, detail="Authentication failed: Firebase Admin SDK not initialized.")
 
 
 def get_group_membership(
