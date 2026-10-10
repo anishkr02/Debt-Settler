@@ -22,7 +22,7 @@ from db_models import (
     User, Group, GroupMember, Invite, ExpenseDB, ExpensePayerDB,
     ExpenseSplitDB, PersonalDebtDB, SettlementTransactionDB, ChatMessageDB
 )
-from auth import get_current_user, get_group_membership, require_group_admin
+from auth import get_current_user, get_group_membership, require_group_admin, DEV_MODE
 from expense_helpers import validate_and_compute_payers, compute_splits
 from retention import cleanup_expired_groups
 
@@ -62,6 +62,10 @@ class UserSignup(BaseModel):
     username: str
     email: EmailStr
     firebase_uid: Optional[str] = None
+
+
+class UsernameUpdate(BaseModel):
+    username: str
 
 
 # 3-20 chars, lowercase letters / digits / underscore only
@@ -179,9 +183,16 @@ def _load_algo_inputs(group_id: int, session: Session):
 
 @app.post("/auth/signup")
 def signup(payload: UserSignup, session: Session = Depends(get_session)):
-    """Registers or sets up a user profile and claims any pending email invites."""
+    """Registers or sets up a user profile in DEV_MODE. Disabled in production."""
+    if not DEV_MODE:
+        raise HTTPException(
+            status_code=403,
+            detail="Signup endpoint is disabled in production. Users are auto-provisioned via Firebase authentication."
+        )
+
     # Normalize and validate username (stored lowercase, [a-z0-9_], 3-20 chars)
     username = validate_username(payload.username)
+    email = payload.email.strip().lower()
 
     # Case-insensitive uniqueness check (usernames are always stored lowercase,
     # so a plain equality check on the normalized value is sufficient)
@@ -191,8 +202,9 @@ def signup(payload: UserSignup, session: Session = Depends(get_session)):
 
     user = User(
         username=username,
-        email=payload.email,
-        firebase_uid=payload.firebase_uid
+        email=email,
+        firebase_uid=payload.firebase_uid,
+        username_confirmed=True
     )
     session.add(user)
     session.commit()
@@ -200,7 +212,7 @@ def signup(payload: UserSignup, session: Session = Depends(get_session)):
 
     # Claim pending email invites
     pending_invites = session.exec(
-        select(Invite).where(Invite.invited_email == user.email, Invite.status == "pending")
+        select(Invite).where(Invite.invited_email == email, Invite.status == "pending")
     ).all()
 
     for inv in pending_invites:
@@ -217,6 +229,7 @@ def signup(payload: UserSignup, session: Session = Depends(get_session)):
         "id": user.id,
         "username": user.username,
         "email": user.email,
+        "username_confirmed": user.username_confirmed,
         "firebase_uid": user.firebase_uid,
         "created_at": user.created_at
     }
@@ -232,7 +245,44 @@ def get_me(current_user: User = Depends(get_current_user), session: Session = De
         "id": current_user.id,
         "username": current_user.username,
         "email": current_user.email,
+        "username_confirmed": current_user.username_confirmed,
         "group_count": len(memberships)
+    }
+
+
+@app.patch("/auth/me/username")
+def update_username(
+    payload: UsernameUpdate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Updates username for a newly auto-provisioned user. Allowed only once while username_confirmed is False."""
+    if current_user.username_confirmed:
+        raise HTTPException(
+            status_code=400,
+            detail="Username has already been confirmed and cannot be changed."
+        )
+
+    new_username = validate_username(payload.username)
+
+    # Check uniqueness (409 if taken by another user)
+    existing = session.exec(
+        select(User).where(User.username == new_username, User.id != current_user.id)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Username is already taken")
+
+    current_user.username = new_username
+    current_user.username_confirmed = True
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "username_confirmed": current_user.username_confirmed
     }
 
 
@@ -374,8 +424,10 @@ def invite_member(
         if not payload.email:
             raise HTTPException(400, "Email is required for email invite")
         
-        # Check if user already exists
-        target_user = session.exec(select(User).where(User.email == payload.email)).first()
+        target_email = payload.email.strip().lower()
+
+        # Check if user already exists with this email -> add immediately!
+        target_user = session.exec(select(User).where(User.email == target_email)).first()
         if target_user:
             existing_mem = session.exec(select(GroupMember).where(
                 GroupMember.group_id == group_id, GroupMember.user_id == target_user.id
@@ -386,9 +438,9 @@ def invite_member(
                 session.commit()
                 session.refresh(mem)
                 return {"status": "added", "method": "email", "member_id": mem.id}
-            return {"status": "already_member", "method": "email"}
+            return {"status": "already_member", "method": "email", "member_id": existing_mem.id}
 
-        invite = Invite(group_id=group_id, method="email", invited_email=payload.email, status="pending")
+        invite = Invite(group_id=group_id, method="email", invited_email=target_email, status="pending")
         session.add(invite)
         session.commit()
         session.refresh(invite)

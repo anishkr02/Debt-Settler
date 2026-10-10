@@ -71,6 +71,13 @@ class ApiClient {
     return this.request('/auth/me');
   }
 
+  async updateUsername(username) {
+    return this.request('/auth/me/username', {
+      method: 'PATCH',
+      body: JSON.stringify({ username }),
+    });
+  }
+
   async searchUsers(query) {
     return this.request(`/users/search?q=${encodeURIComponent(query)}`);
   }

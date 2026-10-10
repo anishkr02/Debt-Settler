@@ -12,6 +12,7 @@ class User(SQLModel, table=True):
     firebase_uid: Optional[str] = Field(default=None, unique=True, index=True)
     email: str = Field(index=True)
     username: str = Field(unique=True, index=True)
+    username_confirmed: bool = Field(default=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     memberships: List["GroupMember"] = Relationship(back_populates="user")

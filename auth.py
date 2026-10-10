@@ -57,7 +57,8 @@ def _get_or_create_dev_user(session: Session, dev_identifier: str) -> User:
         user = User(
             firebase_uid=f"dev_{username}",
             email=email,
-            username=username
+            username=username,
+            username_confirmed=True
         )
         session.add(user)
         session.commit()
@@ -103,8 +104,11 @@ async def get_current_user(
             from db_models import Invite
 
             decoded_token = fb_auth.verify_id_token(token)
+            if not decoded_token.get("email_verified", False):
+                raise HTTPException(status_code=403, detail="Email is not verified in Firebase")
+
             uid = decoded_token.get("uid")
-            email = decoded_token.get("email", "")
+            email = decoded_token.get("email", "").strip().lower()
 
             user = session.exec(select(User).where(User.firebase_uid == uid)).first()
             if not user and email:
@@ -131,7 +135,8 @@ async def get_current_user(
                 user = User(
                     firebase_uid=uid,
                     email=email or f"{candidate}@example.com",
-                    username=candidate
+                    username=candidate,
+                    username_confirmed=False
                 )
                 session.add(user)
                 session.commit()
@@ -152,6 +157,8 @@ async def get_current_user(
                     session.commit()
 
             return user
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=401, detail=f"Invalid Firebase authentication token: {str(e)}")
 

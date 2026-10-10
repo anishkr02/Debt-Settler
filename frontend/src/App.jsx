@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from './api/client';
 import AuthScreen from './components/AuthScreen';
+import ChooseUsernameScreen from './components/ChooseUsernameScreen';
 import DashboardScreen from './components/DashboardScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
 import { LogOut, Wallet, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -14,7 +15,7 @@ export default function App() {
   useEffect(() => {
     const handleHashCheck = async () => {
       const hash = window.location.hash;
-      if (hash.startsWith('#join=') && user) {
+      if (hash.startsWith('#join=') && user && user.username_confirmed !== false) {
         const token = hash.replace('#join=', '');
         try {
           const res = await api.joinGroup(token);
@@ -52,6 +53,16 @@ export default function App() {
 
   if (!user) {
     return <AuthScreen onLoginSuccess={(u) => setUser(u)} />;
+  }
+
+  if (user.username_confirmed === false) {
+    return (
+      <ChooseUsernameScreen
+        user={user}
+        onUsernameConfirmed={(updatedUser) => setUser(updatedUser)}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (

@@ -454,3 +454,123 @@ def test_username_invite_case_insensitive():
     )
     assert res.status_code == 200
     assert res.json()["status"] == "added"
+
+
+def test_signup_blocked_outside_dev_mode(monkeypatch):
+    """POST /auth/signup must return 403 when DEV_MODE is false."""
+    import main
+    monkeypatch.setattr(main, "DEV_MODE", False)
+
+    res = client.post("/auth/signup", json={"username": "prod_user", "email": "prod@test.com"})
+    assert res.status_code == 403
+    assert "disabled" in res.json()["detail"].lower()
+
+
+def test_firebase_token_verification_and_username_patch(monkeypatch):
+    """
+    Test suite for Firebase auto-provisioning:
+    - First login auto-provisions user with username_confirmed=False
+    - Duplicate email prefixes receive distinct disambiguated usernames
+    - Pending email invite is automatically claimed on first login
+    - Unverified email in token gets 403
+    - Invalid token gets 401
+    - PATCH /auth/me/username validates, checks uniqueness (409), sets username_confirmed=True, and blocks further changes
+    """
+    import auth
+    from firebase_admin import auth as fb_auth
+
+    # Ensure Firebase is considered initialized for test
+    monkeypatch.setattr(auth, "_firebase_initialized", True)
+
+    # 1. Unverified email gets 403
+    def mock_verify_unverified(token):
+        return {"uid": "fb_unverified", "email": "unverified@example.com", "email_verified": False}
+
+    monkeypatch.setattr(fb_auth, "verify_id_token", mock_verify_unverified)
+    res_unverified = client.get("/auth/me", headers={"Authorization": "Bearer token_unverified"})
+    assert res_unverified.status_code == 403
+    assert "not verified" in res_unverified.json()["detail"].lower()
+
+    # 2. Invalid token gets 401
+    def mock_verify_invalid(token):
+        raise ValueError("Decoding Firebase ID token failed")
+
+    monkeypatch.setattr(fb_auth, "verify_id_token", mock_verify_invalid)
+    res_invalid = client.get("/auth/me", headers={"Authorization": "Bearer bad_token"})
+    assert res_invalid.status_code == 401
+    assert "invalid firebase" in res_invalid.json()["detail"].lower()
+
+    # 3. Create a group and add a pending email invite for sam@example.com
+    client.post("/auth/signup", json={"username": "host_user", "email": "host@test.com"})
+    grp = client.post("/groups", json={"name": "Auto Claim Grp"}, headers={"X-Dev-Username": "host_user"}).json()
+    gid = grp["id"]
+    client.post(
+        f"/groups/{gid}/invite",
+        json={"method": "email", "email": "Sam@Example.com"},  # mixed case to verify lowercase invite storage
+        headers={"X-Dev-Username": "host_user"}
+    )
+
+    # 4. User 1: sam@example.com logs in with verified token
+    def mock_verify_sam(token):
+        return {"uid": "fb_sam_1", "email": "sam@example.com", "email_verified": True}
+
+    monkeypatch.setattr(fb_auth, "verify_id_token", mock_verify_sam)
+    res_sam = client.get("/auth/me", headers={"Authorization": "Bearer token_sam"})
+    assert res_sam.status_code == 200
+    sam_data = res_sam.json()
+    assert sam_data["email"] == "sam@example.com"
+    assert sam_data["username"] == "sam"
+    assert sam_data["username_confirmed"] is False
+    # Invite should be claimed! User should be a member of the group now
+    assert sam_data["group_count"] == 1
+
+    # 5. User 2: second user with same email prefix (sam@another.com)
+    def mock_verify_sam2(token):
+        return {"uid": "fb_sam_2", "email": "sam@another.com", "email_verified": True}
+
+    monkeypatch.setattr(fb_auth, "verify_id_token", mock_verify_sam2)
+    res_sam2 = client.get("/auth/me", headers={"Authorization": "Bearer token_sam2"})
+    assert res_sam2.status_code == 200
+    sam2_data = res_sam2.json()
+    assert sam2_data["email"] == "sam@another.com"
+    assert sam2_data["username"] != sam_data["username"], "Must get disambiguated username"
+    assert sam2_data["username_confirmed"] is False
+
+    # 6. Username PATCH tests for User 1 (sam)
+    monkeypatch.setattr(fb_auth, "verify_id_token", mock_verify_sam)
+
+    # Reject invalid format (@ symbol)
+    patch_bad = client.patch(
+        "/auth/me/username",
+        json={"username": "sam@pro"},
+        headers={"Authorization": "Bearer token_sam"}
+    )
+    assert patch_bad.status_code == 422
+
+    # Reject taken name (sam2's username)
+    patch_taken = client.patch(
+        "/auth/me/username",
+        json={"username": sam2_data["username"]},
+        headers={"Authorization": "Bearer token_sam"}
+    )
+    assert patch_taken.status_code == 409
+    assert "taken" in patch_taken.json()["detail"].lower()
+
+    # Successfully update to new unique username
+    patch_ok = client.patch(
+        "/auth/me/username",
+        json={"username": "sam_prime"},
+        headers={"Authorization": "Bearer token_sam"}
+    )
+    assert patch_ok.status_code == 200
+    assert patch_ok.json()["username"] == "sam_prime"
+    assert patch_ok.json()["username_confirmed"] is True
+
+    # Block subsequent updates once confirmed
+    patch_again = client.patch(
+        "/auth/me/username",
+        json={"username": "sam_changed_again"},
+        headers={"Authorization": "Bearer token_sam"}
+    )
+    assert patch_again.status_code == 400
+    assert "already been confirmed" in patch_again.json()["detail"].lower()
