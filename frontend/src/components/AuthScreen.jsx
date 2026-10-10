@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../api/client';
+import { auth, googleProvider, signInWithPopup } from '../api/firebase';
 import { Wallet, ShieldCheck, UserCheck, ArrowRight, Sparkles } from 'lucide-react';
 
 export default function AuthScreen({ onLoginSuccess }) {
@@ -49,16 +50,40 @@ export default function AuthScreen({ onLoginSuccess }) {
     }
   };
 
-  // Handle Simulated Google Sign-In
-  const handleGoogleSignIn = () => {
-    // In production, triggers Firebase popup: signInWithPopup(auth, provider)
-    // For local dev preview, offers instant Google Auth simulation
-    const simulatedGoogleEmail = `${devUser}@gmail.com`;
-    handleDevLogin(devUser);
+  // Handle Google Sign-In (Firebase popup)
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      if (auth && googleProvider) {
+        const result = await signInWithPopup(auth, googleProvider);
+        const idToken = await result.user.getIdToken();
+        api.setSession(
+          {
+            email: result.user.email,
+            username: result.user.displayName || result.user.email?.split('@')[0],
+          },
+          idToken
+        );
+        const me = await api.getMe();
+        api.setSession(me, idToken);
+        onLoginSuccess(me);
+      } else {
+        // Fallback to dev login if firebase config is missing
+        handleDevLogin(devUser);
+      }
+    } catch (err) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        return;
+      }
+      setError(err.message || 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-cream-100 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8">
       {/* Brand Header */}
       <div className="max-w-md w-full text-center mb-8">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-olive-primary text-white shadow-lg shadow-olive-primary/20 mb-4">
