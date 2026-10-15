@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from './api/client';
 import AuthScreen from './components/AuthScreen';
 import ChooseUsernameScreen from './components/ChooseUsernameScreen';
@@ -6,31 +6,53 @@ import DashboardScreen from './components/DashboardScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
 import { LogOut, Wallet, CheckCircle2, AlertCircle } from 'lucide-react';
 
+const JOIN_KEY_HASH = '#join=';
+const JOIN_STORAGE_KEY = 'debt_settle_pending_join';
+
 export default function App() {
   const [user, setUser] = useState(api.currentUser);
   const [selectedGroupId, setSelectedGroupId] = useState(null);
-  const [joinNotification, setJoinNotification] = useState('');
+  // { type: 'success' | 'error', text } shown under the header
+  const [notice, setNotice] = useState(null);
+  const joinInFlight = useRef(false);
 
-  // Check URL hash for join token on mount or login
+  // 1) Capture an invite token from the URL right away and keep it in
+  //    sessionStorage, so it survives sign-in and the "choose your username"
+  //    step. The hash is removed from the address bar immediately.
   useEffect(() => {
-    const handleHashCheck = async () => {
-      const hash = window.location.hash;
-      if (hash.startsWith('#join=') && user && user.username_confirmed !== false) {
-        const token = hash.replace('#join=', '');
-        try {
-          const res = await api.joinGroup(token);
-          setJoinNotification('Successfully joined the group from your invite link!');
-          window.location.hash = '';
-          if (res.group_id) {
-            setSelectedGroupId(res.group_id);
-          }
-        } catch (err) {
-          setJoinNotification(`Failed to join: ${err.message}`);
-        }
-      }
-    };
+    const hash = window.location.hash;
+    if (hash.startsWith(JOIN_KEY_HASH)) {
+      const token = decodeURIComponent(hash.slice(JOIN_KEY_HASH.length)).trim();
+      if (token) sessionStorage.setItem(JOIN_STORAGE_KEY, token);
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
 
-    handleHashCheck();
+  // 2) Once the person is signed in AND has confirmed a username, use the token.
+  useEffect(() => {
+    if (!user || user.username_confirmed === false) return;
+    const token = sessionStorage.getItem(JOIN_STORAGE_KEY);
+    if (!token || joinInFlight.current) return;
+
+    joinInFlight.current = true;
+    (async () => {
+      try {
+        const res = await api.joinGroup(token);
+        setNotice({
+          type: 'success',
+          text: res.status === 'already_member'
+            ? "You're already in this group."
+            : 'You joined the group from your invite link!',
+        });
+        if (res.group_id) setSelectedGroupId(res.group_id);
+      } catch (err) {
+        setNotice({ type: 'error', text: `Couldn't join the group: ${err.message}` });
+      } finally {
+        // Always clear it, so a bad or used link isn't retried on every render.
+        sessionStorage.removeItem(JOIN_STORAGE_KEY);
+        joinInFlight.current = false;
+      }
+    })();
   }, [user]);
 
   // Session validation
@@ -46,6 +68,7 @@ export default function App() {
   }, []);
 
   const handleLogout = () => {
+    sessionStorage.removeItem(JOIN_STORAGE_KEY);
     api.clearSession();
     setUser(null);
     setSelectedGroupId(null);
@@ -100,14 +123,25 @@ export default function App() {
       </header>
 
       {/* Join Link Notice Banner */}
-      {joinNotification && (
+      {notice && (
         <div className="max-w-5xl mx-auto w-full px-4 pt-4">
-          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center justify-between">
+          <div
+            className={`p-3 text-xs font-bold rounded-xl flex items-center justify-between border ${
+              notice.type === 'error'
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            }`}
+          >
             <span className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              {joinNotification}
+              {notice.type === 'error'
+                ? <AlertCircle className="w-4 h-4 text-red-600" />
+                : <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+              {notice.text}
             </span>
-            <button onClick={() => setJoinNotification('')} className="text-emerald-600 hover:text-emerald-800">
+            <button
+              onClick={() => setNotice(null)}
+              className={notice.type === 'error' ? 'text-red-600 hover:text-red-800' : 'text-emerald-600 hover:text-emerald-800'}
+            >
               ✕
             </button>
           </div>

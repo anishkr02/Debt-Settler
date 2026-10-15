@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api/client';
 import {
   ChevronRight, Users, RefreshCw, AlertCircle,
-  AtSign, Link2, Mail, Search, Copy, Check, X,
+  Mail, Copy, Check, X,
   ChevronLeft, Plus,
 } from 'lucide-react';
+import InvitePanel from './InvitePanel';
+import { buildJoinUrl, copyText } from '../lib/joinLink';
 
 // ─── tiny shared input style ─────────────────────────────────────────────────
 const INPUT =
@@ -83,142 +85,21 @@ function StepInviteMembers({
   submitting,
   submitError,
 }) {
-  const [method, setMethod] = useState('username'); // 'username' | 'email' | 'join_link'
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState('');
-  const [noUserFound, setNoUserFound] = useState(false);
-  const [searchedName, setSearchedName] = useState('');
+  // The group doesn't exist yet, so "adding" only stages a chip. The invites
+  // are sent after the group is created (see handleFinalCreate).
+  const stageChip = (chip) => {
+    const dup = chips.some((c) => c.type === chip.type && c.value.toLowerCase() === chip.value.toLowerCase());
+    if (dup) throw new Error(`${chip.label} is already in the invite list`);
+    setChips((prev) => [...prev, chip]);
+  };
 
-  const [emailInput, setEmailInput] = useState('');
-  const [emailError, setEmailError] = useState('');
+  const onAddUsername = (username) =>
+    stageChip({ type: 'username', value: username, label: `@${username}` });
+  const onAddEmail = (email) =>
+    stageChip({ type: 'email', value: email, label: `${email} (pending)` });
 
-  const [inputError, setInputError] = useState('');
-
-  // 250ms debounced search for username
-  useEffect(() => {
-    const raw = query.trim().replace(/^@+/, '');
-    setInputError('');
-    if (raw.length < 2) {
-      setResults([]);
-      setSearchError('');
-      setNoUserFound(false);
-      setSearching(false);
-      return;
-    }
-
-    setSearching(true);
-    setSearchError('');
-    setNoUserFound(false);
-
-    const timer = setTimeout(async () => {
-      try {
-        const data = await api.searchUsers(raw);
-        setResults(data || []);
-        setSearchedName(raw);
-        setNoUserFound(!data || data.length === 0);
-      } catch (err) {
-        setSearchError(err.message || 'Error searching users');
-        setResults([]);
-        setNoUserFound(false);
-      } finally {
-        setSearching(false);
-      }
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  // Remove a chip
-  const removeChip = (indexToRemove) => {
+  const removeChip = (indexToRemove) =>
     setChips((prev) => prev.filter((_, idx) => idx !== indexToRemove));
-  };
-
-  // Add a username chip
-  const handleAddUsername = (uname) => {
-    setInputError('');
-    const clean = uname.trim().replace(/^@+/, '');
-    if (!clean) return;
-
-    // Block adding yourself
-    if (currentUser?.username && clean.toLowerCase() === currentUser.username.toLowerCase()) {
-      setInputError('You cannot add yourself (you will be the group admin)');
-      return;
-    }
-
-    // Block duplicates
-    const alreadyExists = chips.some(
-      (c) => c.type === 'username' && c.value.toLowerCase() === clean.toLowerCase()
-    );
-    if (alreadyExists) {
-      setInputError(`@${clean} is already in the invite list`);
-      return;
-    }
-
-    setChips((prev) => [
-      ...prev,
-      { type: 'username', value: clean, label: `@${clean}` },
-    ]);
-    setQuery('');
-    setResults([]);
-    setNoUserFound(false);
-  };
-
-  // On Enter or Add button in username input
-  const handleUsernameSubmit = (e) => {
-    if (e) e.preventDefault();
-    const clean = query.trim().replace(/^@+/, '');
-    if (!clean) return;
-
-    // Check if there is an exact match in results
-    const exactMatch = results.find(
-      (r) => r.username.toLowerCase() === clean.toLowerCase()
-    );
-    if (exactMatch) {
-      handleAddUsername(exactMatch.username);
-    } else if (results.length === 1) {
-      handleAddUsername(results[0].username);
-    } else {
-      handleAddUsername(clean);
-    }
-  };
-
-  // Add an email chip
-  const handleAddEmail = (e) => {
-    e.preventDefault();
-    setEmailError('');
-    const cleanEmail = emailInput.trim();
-    if (!cleanEmail) return;
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanEmail)) {
-      setEmailError('Please enter a valid email address');
-      return;
-    }
-
-    // Block duplicates
-    const alreadyExists = chips.some(
-      (c) => c.type === 'email' && c.value.toLowerCase() === cleanEmail.toLowerCase()
-    );
-    if (alreadyExists) {
-      setEmailError(`${cleanEmail} is already in the invite list`);
-      return;
-    }
-
-    setChips((prev) => [
-      ...prev,
-      { type: 'email', value: cleanEmail, label: `${cleanEmail} (pending)` },
-    ]);
-    setEmailInput('');
-  };
-
-  const TABS = [
-    { id: 'username', label: 'Username', icon: AtSign },
-    { id: 'email', label: 'Email', icon: Mail },
-    { id: 'join_link', label: 'Link', icon: Link2 },
-  ];
 
   const inviteCount = chips.length;
   const buttonLabel = submitting
@@ -236,7 +117,6 @@ function StepInviteMembers({
         Add people now, or skip and invite later from the Members tab.
       </p>
 
-      {/* Added Chips List */}
       {chips.length > 0 && (
         <div className="mb-4 p-3 bg-white border border-slate-200 rounded-2xl">
           <div className="flex items-center justify-between mb-2">
@@ -254,7 +134,7 @@ function StepInviteMembers({
           <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
             {chips.map((chip, idx) => (
               <span
-                key={idx}
+                key={`${chip.type}-${chip.value}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1 bg-olive-50 border border-olive-200 text-olive-900 rounded-xl text-xs font-semibold"
               >
                 <span>{chip.label}</span>
@@ -272,7 +152,6 @@ function StepInviteMembers({
         </div>
       )}
 
-      {/* Global submit error */}
       {submitError && (
         <div className="mb-4 flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -280,146 +159,15 @@ function StepInviteMembers({
         </div>
       )}
 
-      {/* Method Tabs */}
-      <div className="flex gap-1 p-1 bg-white rounded-2xl border border-slate-200 mb-4">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setMethod(id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition
-              ${method === id
-                ? 'bg-olive-primary text-white shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            <Icon className="w-3.5 h-3.5" /> {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Contents */}
       <div className="flex-1">
-        {/* — 1. Username Tab — */}
-        {method === 'username' && (
-          <div className="space-y-3">
-            <form onSubmit={handleUsernameSubmit} className="relative flex items-center gap-2">
-              <div className="relative flex-1">
-                <input
-                  className={INPUT + ' pl-10 pr-4'}
-                  placeholder="Type username (e.g. rahul)…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-              </div>
-              {query.trim().length >= 2 && (
-                <button
-                  type="submit"
-                  className="px-4 py-3 bg-olive-primary hover:bg-olive-700 text-white text-xs font-bold rounded-2xl transition"
-                >
-                  Add
-                </button>
-              )}
-            </form>
-
-            {inputError && (
-              <p className="text-xs text-red-600 font-medium px-1">{inputError}</p>
-            )}
-
-            {searchError && (
-              <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl p-2.5">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>{searchError}</span>
-              </div>
-            )}
-
-            {searching && (
-              <p className="text-xs text-slate-400 italic px-1">Searching users…</p>
-            )}
-
-            {noUserFound && query.trim().length >= 2 && !searching && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1">
-                <p className="font-bold">No user named @{searchedName}.</p>
-                <p className="text-amber-700">
-                  They need to sign in to Debt-Settle once first, or invite by email or link instead.
-                </p>
-              </div>
-            )}
-
-            {results.length > 0 && !searching && (
-              <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden max-h-44 overflow-y-auto shadow-sm">
-                {results.map((u) => (
-                  <div
-                    key={u.id}
-                    onClick={() => handleAddUsername(u.username)}
-                    className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 cursor-pointer transition"
-                  >
-                    <span className="text-sm font-semibold text-slate-800">@{u.username}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAddUsername(u.username);
-                      }}
-                      className="px-3 py-1 bg-olive-primary text-white text-xs font-bold rounded-xl transition hover:bg-olive-700"
-                    >
-                      + Add
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* — 2. Email Tab — */}
-        {method === 'email' && (
-          <form onSubmit={handleAddEmail} className="space-y-3">
-            <div className="flex items-center gap-2">
-              <input
-                type="email"
-                className={INPUT}
-                placeholder="friend@gmail.com"
-                value={emailInput}
-                onChange={(e) => {
-                  setEmailInput(e.target.value);
-                  setEmailError('');
-                }}
-              />
-              <button
-                type="submit"
-                disabled={!emailInput.trim()}
-                className="px-5 py-3 bg-olive-primary hover:bg-olive-700 text-white font-bold text-xs rounded-2xl transition disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-            {emailError && (
-              <p className="text-xs text-red-600 font-medium px-1">{emailError}</p>
-            )}
-            <p className="text-[11px] text-slate-400 px-1">
-              They'll be auto-added to this group when they sign up with this email.
-            </p>
-          </form>
-        )}
-
-        {/* — 3. Link Tab — */}
-        {method === 'join_link' && (
-          <div className="p-4 bg-white border border-slate-200 rounded-2xl text-center space-y-2">
-            <div className="w-10 h-10 rounded-full bg-olive-50 text-olive-primary flex items-center justify-center mx-auto">
-              <Link2 className="w-5 h-5" />
-            </div>
-            <p className="text-xs font-bold text-slate-800">
-              Your join link will appear after the group is created.
-            </p>
-            <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-              Once you tap &quot;Create group&quot;, a 1-tap invite link will be generated for you to copy and share.
-            </p>
-          </div>
-        )}
+        <InvitePanel
+          currentUsername={currentUser?.username}
+          excludeUsernames={[]}
+          onAddUsername={onAddUsername}
+          onAddEmail={onAddEmail}
+        />
       </div>
 
-      {/* Submit Create Group button */}
       <button
         type="button"
         onClick={onSubmitCreate}
@@ -438,11 +186,13 @@ function StepInviteMembers({
 function StepResultSummary({ summary, onOpenGroup }) {
   const [copied, setCopied] = useState(false);
 
-  const copyLink = () => {
+  const copyLink = async () => {
     if (!summary?.joinLink) return;
-    navigator.clipboard.writeText(summary.joinLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyText(summary.joinLink);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -496,6 +246,9 @@ function StepResultSummary({ summary, onOpenGroup }) {
               </span>
             ))}
           </div>
+          <p className="text-[11px] text-blue-700">
+            We don&apos;t send emails. Share the link below. They&apos;re added when they sign in with that email.
+          </p>
         </div>
       )}
 
@@ -603,11 +356,16 @@ function CreateGroupModal({ user, onClose, onCreated }) {
             });
             addedList.push(`@${chip.value}`);
           } else if (chip.type === 'email') {
-            await api.inviteMember(newGroup.id, {
+            const res = await api.inviteMember(newGroup.id, {
               method: 'email',
               email: chip.value,
             });
-            pendingList.push(chip.value);
+            // If that email already has an account, the server adds them straight away.
+            if (res.status === 'added' || res.status === 'already_member') {
+              addedList.push(chip.value);
+            } else {
+              pendingList.push(chip.value);
+            }
           }
         } catch (err) {
           failuresList.push({
@@ -621,7 +379,7 @@ function CreateGroupModal({ user, onClose, onCreated }) {
       let joinLink = '';
       try {
         const linkRes = await api.inviteMember(newGroup.id, { method: 'join_link' });
-        joinLink = `${window.location.origin}/#join=${linkRes.join_token}`;
+        joinLink = buildJoinUrl(linkRes.join_token);
       } catch (e) {
         // join link fallback if error
       }

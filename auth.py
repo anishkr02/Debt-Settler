@@ -1,9 +1,14 @@
+import logging
 import os
+import re
 from typing import Optional
 from fastapi import Request, HTTPException, Depends
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from db import get_session
 from db_models import User, GroupMember, Group
+
+logger = logging.getLogger("debt_settle.auth")
 
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
@@ -96,73 +101,104 @@ async def get_current_user(
         dev_name = token[4:]
         return _get_or_create_dev_user(session, dev_name)
 
-    # 3. Verify Firebase Token
-    if _firebase_initialized:
-        try:
-            import re
-            from firebase_admin import auth as fb_auth
-            from db_models import Invite
+    # 3. Verify the Firebase token. ONLY the verification is inside this try:
+    #    database problems must never be reported as "bad token", and no
+    #    exception text may ever reach the client.
+    if not _firebase_initialized:
+        logger.error("A real sign-in token arrived but Firebase Admin is not initialized")
+        raise HTTPException(status_code=401, detail="Invalid or expired sign-in")
 
-            decoded_token = fb_auth.verify_id_token(token)
-            if not decoded_token.get("email_verified", False):
-                raise HTTPException(status_code=403, detail="Email is not verified in Firebase")
+    try:
+        from firebase_admin import auth as fb_auth
+        decoded_token = fb_auth.verify_id_token(token)
+    except Exception as e:
+        logger.warning("Firebase token verification failed: %s", e)
+        raise HTTPException(status_code=401, detail="Invalid or expired sign-in")
 
-            uid = decoded_token.get("uid")
-            email = decoded_token.get("email", "").strip().lower()
+    if not decoded_token.get("email_verified", False):
+        raise HTTPException(status_code=403, detail="Email is not verified in Firebase")
 
-            user = session.exec(select(User).where(User.firebase_uid == uid)).first()
-            if not user and email:
-                user = session.exec(select(User).where(User.email == email)).first()
-                if user:
-                    user.firebase_uid = uid
-                    session.add(user)
-                    session.commit()
-                    session.refresh(user)
+    uid = decoded_token.get("uid") or decoded_token.get("sub")
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid or expired sign-in")
+    email = (decoded_token.get("email") or "").strip().lower()
 
-            if not user:
-                # First-time user sign in via Firebase: sanitize username [a-z0-9_]{3,20}
-                raw_base = email.split("@")[0] if email else f"user_{uid[:6]}"
-                base_name = re.sub(r'[^a-z0-9_]', '_', raw_base.lower())[:15]
-                if len(base_name) < 3:
-                    base_name = f"user_{uid[:6].lower()}"
+    return _provision_user(session, uid, email)
 
-                candidate = base_name
-                count = 1
-                while session.exec(select(User).where(User.username == candidate)).first():
-                    candidate = f"{base_name[:12]}_{count}"
-                    count += 1
 
-                user = User(
-                    firebase_uid=uid,
-                    email=email or f"{candidate}@example.com",
-                    username=candidate,
-                    username_confirmed=False
-                )
-                session.add(user)
-                session.commit()
-                session.refresh(user)
-
-                # Claim any pending email invites
-                if email:
-                    pending_invites = session.exec(
-                        select(Invite).where(Invite.invited_email == email, Invite.status == "pending")
-                    ).all()
-                    for inv in pending_invites:
-                        existing_mem = session.exec(select(GroupMember).where(
-                            GroupMember.group_id == inv.group_id, GroupMember.user_id == user.id
-                        )).first()
-                        if not existing_mem:
-                            session.add(GroupMember(group_id=inv.group_id, user_id=user.id, is_admin=False))
-                        inv.status = "accepted"
-                    session.commit()
-
+def _find_existing_user(session: Session, uid: str, email: str) -> Optional[User]:
+    """Find the user for this Firebase uid, or link a matching-email account to it."""
+    user = session.exec(select(User).where(User.firebase_uid == uid)).first()
+    if user:
+        return user
+    if email:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if user:
+            user.firebase_uid = uid
+            session.add(user)
+            session.commit()
+            session.refresh(user)
             return user
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=401, detail=f"Invalid Firebase authentication token: {str(e)}")
+    return None
 
-    raise HTTPException(status_code=401, detail="Authentication failed: Firebase Admin SDK not initialized.")
+
+def _claim_pending_invites(session: Session, user: User, email: str) -> None:
+    """Turn pending email invites for this address into real memberships."""
+    from db_models import Invite
+    from membership import add_member_idempotent
+
+    if not email:
+        return
+    pending = session.exec(
+        select(Invite).where(Invite.invited_email == email, Invite.status == "pending")
+    ).all()
+    for inv in pending:
+        add_member_idempotent(session, inv.group_id, user.id)
+        inv.status = "accepted"
+        session.add(inv)
+    session.commit()
+
+
+def _provision_user(session: Session, uid: str, email: str) -> User:
+    """Return the user for a verified Firebase identity, creating them on first login.
+
+    Safe when the browser fires several requests at once right after login:
+    if another request creates the same user first, we use theirs.
+    """
+    user = _find_existing_user(session, uid, email)
+    if user:
+        return user
+
+    # First-time sign-in: suggest a valid username ([a-z0-9_]{3,20}); the
+    # person confirms or edits it on the "Choose your username" screen.
+    raw_base = email.split("@")[0] if email else f"user_{uid[:6]}"
+    base_name = re.sub(r"[^a-z0-9_]", "_", raw_base.lower())[:15]
+    if len(base_name) < 3:
+        base_name = f"user_{uid[:6].lower()}"
+
+    for attempt in range(25):
+        candidate = base_name if attempt == 0 else f"{base_name[:12]}_{attempt}"
+        user = User(
+            firebase_uid=uid,
+            email=email or f"{candidate}@example.com",
+            username=candidate,
+            username_confirmed=False,
+        )
+        session.add(user)
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            # A parallel request may have just created this very person.
+            existing = _find_existing_user(session, uid, email)
+            if existing:
+                return existing
+            continue  # the username was taken in the meantime: try the next one
+        session.refresh(user)
+        _claim_pending_invites(session, user, email)
+        return user
+
+    raise HTTPException(status_code=503, detail="Could not create your account. Please try again.")
 
 
 def get_group_membership(

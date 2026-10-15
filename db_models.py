@@ -4,6 +4,7 @@ Database tables for Debt-Settle (SQLModel = SQLAlchemy + Pydantic in one).
 
 from datetime import datetime, timezone
 from typing import Optional, List
+from sqlalchemy import UniqueConstraint
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -33,6 +34,11 @@ class Group(SQLModel, table=True):
 
 
 class GroupMember(SQLModel, table=True):
+    # A user can belong to a group only once. Without this, two simultaneous
+    # "join" requests (double click, React dev double-effect) could create two
+    # membership rows for the same person.
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_groupmember_group_user"),)
+
     id: Optional[int] = Field(default=None, primary_key=True)
     group_id: int = Field(foreign_key="group.id", index=True)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id", index=True)

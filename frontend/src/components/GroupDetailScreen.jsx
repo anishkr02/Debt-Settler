@@ -21,10 +21,8 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
     try {
       setLoading(true);
       setError('');
+      // The server says whether YOU are the admin (data.is_admin); don't guess from names.
       const data = await api.getGroup(groupId);
-      // Determine if current user is admin in this group
-      const currentMember = data.members.find((m) => m.name === currentUser.username);
-      data.is_admin = !!currentMember?.is_admin;
       setGroup(data);
     } catch (err) {
       setError(err.message);
@@ -61,6 +59,16 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
     );
   }
 
+  // ONE Settle Up button for the whole screen.
+  //  - before settling: enabled only when there is something to settle
+  //  - once settling has started (or finished): becomes "View payments"
+  const hasStarted = !!group.is_frozen || !!group.fully_settled_at;
+  const canSettle = group.members.length >= 2 && (group.expenses_count ?? 0) >= 1;
+  const settleDisabled = !hasStarted && !canSettle;
+  const settleHint = settleDisabled
+    ? 'Add at least 2 members and 1 expense before settling up.'
+    : '';
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -84,7 +92,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
               )}
             </div>
             <p className="text-xs text-slate-400 font-medium">
-              {group.members.length} members • Group ID #{group.id}
+              {group.members.length} {group.members.length === 1 ? 'member' : 'members'}
             </p>
           </div>
         </div>
@@ -103,13 +111,23 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
 
           <button
             onClick={() => setShowSettleModal(true)}
-            className="px-4 py-2 bg-olive-primary hover:bg-olive-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition active:scale-[0.98]"
+            disabled={settleDisabled}
+            title={settleHint || undefined}
+            className={`px-4 py-2 font-bold text-xs rounded-xl flex items-center gap-1.5 transition ${
+              settleDisabled
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-olive-primary hover:bg-olive-700 text-white shadow-sm active:scale-[0.98]'
+            }`}
           >
             <Zap className="w-3.5 h-3.5 fill-current" />
-            <span>Settle Up</span>
+            <span>{hasStarted ? 'View payments' : 'Settle Up'}</span>
           </button>
         </div>
       </div>
+
+      {settleHint && (
+        <p className="text-xs text-slate-500 font-medium px-1 -mt-3">{settleHint}</p>
+      )}
 
       {/* Tabs Bar */}
       <div className="grid grid-cols-4 gap-1 p-1.5 bg-slate-200/70 rounded-2xl text-xs font-bold">
@@ -137,10 +155,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
       {/* Active Tab Component */}
       <div>
         {activeTab === 'balances' && (
-          <BalancesTab
-            group={group}
-            onOpenSettleModal={() => setShowSettleModal(true)}
-          />
+          <BalancesTab group={group} />
         )}
         {activeTab === 'expenses' && (
           <ExpensesTab
@@ -151,6 +166,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
         {activeTab === 'members' && (
           <MembersTab
             group={group}
+            currentUser={currentUser}
             onMemberUpdated={fetchGroup}
           />
         )}

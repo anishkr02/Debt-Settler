@@ -498,7 +498,7 @@ def test_firebase_token_verification_and_username_patch(monkeypatch):
     monkeypatch.setattr(fb_auth, "verify_id_token", mock_verify_invalid)
     res_invalid = client.get("/auth/me", headers={"Authorization": "Bearer bad_token"})
     assert res_invalid.status_code == 401
-    assert "invalid firebase" in res_invalid.json()["detail"].lower()
+    assert res_invalid.json()["detail"] == "Invalid or expired sign-in"
 
     # 3. Create a group and add a pending email invite for sam@example.com
     client.post("/auth/signup", json={"username": "host_user", "email": "host@test.com"})
@@ -574,3 +574,188 @@ def test_firebase_token_verification_and_username_patch(monkeypatch):
     )
     assert patch_again.status_code == 400
     assert "already been confirmed" in patch_again.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------
+# Round 1 bug fixes
+# ---------------------------------------------------------------------
+
+def _dev_user(name):
+    client.post("/auth/signup", json={"username": name, "email": f"{name}@example.com"})
+    return {"X-Dev-Username": name}
+
+
+def test_balances_use_usernames_and_list_every_member():
+    alice, bob = _dev_user("alice"), _dev_user("bob")
+    _dev_user("carol")
+    gid = client.post("/groups", json={"name": "T"}, headers=alice).json()["id"]
+    client.post(f"/groups/{gid}/invite", json={"method": "username", "username": "bob"}, headers=alice)
+    client.post(f"/groups/{gid}/invite", json={"method": "username", "username": "carol"}, headers=alice)
+
+    # Empty group: keys must be usernames, not numeric member ids.
+    empty = client.get(f"/groups/{gid}/balances", headers=alice).json()
+    assert set(empty.keys()) == {"alice", "bob", "carol"}
+    assert all(v == 0.0 for v in empty.values())
+
+    # An expense that doesn't involve carol: she must still be listed, at 0.0.
+    members = client.get(f"/groups/{gid}", headers=alice).json()["members"]
+    ids = {m["name"]: m["member_id"] if "member_id" in m else m["id"] for m in members}
+    res = client.post(
+        f"/groups/{gid}/expenses/equal",
+        json={"description": "Dinner", "total_amount": 100, "paid_by": ids["alice"],
+              "split_among": [ids["alice"], ids["bob"]]},
+        headers=alice,
+    )
+    assert res.status_code == 200, res.text
+    after = client.get(f"/groups/{gid}/balances", headers=alice).json()
+    assert set(after.keys()) == {"alice", "bob", "carol"}
+    assert after["alice"] == 50.0 and after["bob"] == -50.0 and after["carol"] == 0.0
+
+
+def test_database_failure_does_not_leak_internals():
+    from sqlalchemy.exc import OperationalError
+
+    def broken_session():
+        raise OperationalError("SELECT secret_col FROM user WHERE firebase_uid = 'z0ZB...'", {}, Exception("boom"))
+        yield  # pragma: no cover
+
+    safe_client = TestClient(app, raise_server_exceptions=False)
+    app.dependency_overrides[get_session] = broken_session
+    try:
+        res = safe_client.get("/auth/me", headers={"X-Dev-Username": "alice", "Origin": "http://localhost:5173"})
+    finally:
+        app.dependency_overrides[get_session] = override_get_session
+
+    assert res.status_code == 500
+    assert res.json() == {"detail": "Something went wrong"}
+    body = res.text.lower()
+    assert "select" not in body and "secret_col" not in body and "z0zb" not in body
+    # CORS wraps the error handler, so the browser can read this response.
+    assert "access-control-allow-origin" in res.headers
+
+
+def test_database_error_is_not_reported_as_a_bad_token(monkeypatch):
+    import auth
+    from firebase_admin import auth as fb_auth
+
+    monkeypatch.setattr(auth, "_firebase_initialized", True)
+    monkeypatch.setattr(fb_auth, "verify_id_token",
+                        lambda t: {"uid": "u1", "email": "u1@example.com", "email_verified": True})
+
+    def explode(*a, **k):
+        raise RuntimeError("SELECT * FROM user -- secret")
+
+    monkeypatch.setattr(auth, "_provision_user", explode)
+    safe_client = TestClient(app, raise_server_exceptions=False)
+    res = safe_client.get("/auth/me", headers={"Authorization": "Bearer realish"})
+    assert res.status_code == 500
+    assert res.json() == {"detail": "Something went wrong"}
+
+
+def test_bad_token_message_is_generic(monkeypatch):
+    import auth
+    from firebase_admin import auth as fb_auth
+
+    monkeypatch.setattr(auth, "_firebase_initialized", True)
+
+    def bad(token):
+        raise ValueError("Token has wrong audience dept-settle-SECRET")
+
+    monkeypatch.setattr(fb_auth, "verify_id_token", bad)
+    res = client.get("/auth/me", headers={"Authorization": "Bearer nope"})
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Invalid or expired sign-in"
+
+
+def test_parallel_first_login_returns_the_same_user(monkeypatch):
+    """Simulates two first-login requests racing: the loser must reuse the winner's user."""
+    import auth
+
+    with Session(test_engine) as s:
+        winner = User(firebase_uid="race_uid", email="race@example.com", username="race", username_confirmed=False)
+        s.add(winner)
+        s.commit()
+        s.refresh(winner)
+        winner_id = winner.id
+
+    real_find = auth._find_existing_user
+    calls = {"n": 0}
+
+    def find_misses_first_time(session, uid, email):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real_find(session, uid, email)
+
+    monkeypatch.setattr(auth, "_find_existing_user", find_misses_first_time)
+    with Session(test_engine) as s:
+        user = auth._provision_user(s, "race_uid", "race@example.com")
+        assert user.id == winner_id
+    with Session(test_engine) as s:
+        assert len(s.exec(select(User).where(User.firebase_uid == "race_uid")).all()) == 1
+
+
+def test_joining_twice_creates_one_membership():
+    alice, bob = _dev_user("alice"), _dev_user("bob")
+    gid = client.post("/groups", json={"name": "J"}, headers=alice).json()["id"]
+    token = client.post(f"/groups/{gid}/invite", json={"method": "join_link"}, headers=alice).json()["join_token"]
+
+    first = client.post(f"/groups/join/{token}", headers=bob).json()
+    second = client.post(f"/groups/join/{token}", headers=bob).json()
+    assert first["status"] == "joined" and second["status"] == "already_member"
+    assert first["member_id"] == second["member_id"]
+
+    # The database itself must also refuse a duplicate membership.
+    from sqlalchemy.exc import IntegrityError
+    with Session(test_engine) as s:
+        existing = s.exec(select(GroupMember).where(GroupMember.group_id == gid)).first()
+        s.add(GroupMember(group_id=gid, user_id=existing.user_id))
+        with pytest.raises(IntegrityError):
+            s.commit()
+
+
+def test_invites_are_idempotent():
+    alice = _dev_user("alice")
+    gid = client.post("/groups", json={"name": "I"}, headers=alice).json()["id"]
+    a = client.post(f"/groups/{gid}/invite", json={"method": "email", "email": "Zed@Example.com"}, headers=alice).json()
+    b = client.post(f"/groups/{gid}/invite", json={"method": "email", "email": "zed@example.com"}, headers=alice).json()
+    assert a["invite_id"] == b["invite_id"]
+    l1 = client.post(f"/groups/{gid}/invite", json={"method": "join_link"}, headers=alice).json()
+    l2 = client.post(f"/groups/{gid}/invite", json={"method": "join_link"}, headers=alice).json()
+    assert l1["join_token"] == l2["join_token"]
+
+
+def test_username_claim_race_returns_409(monkeypatch):
+    alice = _dev_user("alice")
+    _dev_user("bob")
+    # Make alice an unconfirmed (auto-provisioned style) user.
+    with Session(test_engine) as s:
+        u = s.exec(select(User).where(User.username == "alice")).first()
+        u.username_confirmed = False
+        s.add(u)
+        s.commit()
+
+    from sqlalchemy.exc import IntegrityError
+
+    def commit_loses_race(self):
+        raise IntegrityError("UPDATE user", {}, Exception("UNIQUE constraint failed: user.username"))
+
+    monkeypatch.setattr(Session, "commit", commit_loses_race)
+    res = client.patch("/auth/me/username", json={"username": "fresh_name"}, headers=alice)
+    assert res.status_code == 409
+    assert res.json()["detail"] == "Username is already taken"
+
+
+def test_group_detail_reports_admin_flag_and_expense_count():
+    alice, bob = _dev_user("alice"), _dev_user("bob")
+    gid = client.post("/groups", json={"name": "D"}, headers=alice).json()["id"]
+    client.post(f"/groups/{gid}/invite", json={"method": "username", "username": "bob"}, headers=alice)
+
+    a = client.get(f"/groups/{gid}", headers=alice).json()
+    b = client.get(f"/groups/{gid}", headers=bob).json()
+    assert a["is_admin"] is True and b["is_admin"] is False
+    assert a["expenses_count"] == 0
+
+    ids = {m["name"]: m["id"] for m in a["members"]}
+    client.post(f"/groups/{gid}/expenses/equal",
+                json={"description": "x", "total_amount": 10, "paid_by": ids["alice"],
+                      "split_among": [ids["alice"], ids["bob"]]}, headers=alice)
+    assert client.get(f"/groups/{gid}", headers=alice).json()["expenses_count"] == 1

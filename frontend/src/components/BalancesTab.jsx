@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import { TrendingUp, TrendingDown, CheckCircle2, Zap, RefreshCw, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, CheckCircle2, RefreshCw, AlertCircle } from 'lucide-react';
 
-export default function BalancesTab({ group, onOpenSettleModal }) {
+export default function BalancesTab({ group }) {
   const [balances, setBalances] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -25,31 +25,13 @@ export default function BalancesTab({ group, onOpenSettleModal }) {
   }, [group.id]);
 
   const balanceEntries = Object.entries(balances);
-  const totalPositive = balanceEntries.reduce((sum, [_, amt]) => amt > 0 ? sum + amt : sum, 0);
+  // Real check, computed from the data on screen: every rupee someone is owed
+  // must be owed by someone else, so the balances add up to zero.
+  const balanceSum = balanceEntries.reduce((sum, [, amt]) => sum + amt, 0);
+  const balancesAddUp = Math.abs(balanceSum) < 0.01;
 
   return (
     <div className="space-y-6">
-      {/* Settle Up Action Card */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-olive-300 flex items-center gap-1.5 mb-1">
-            <Zap className="w-3.5 h-3.5" /> Minimum-Transaction Settlement
-          </span>
-          <h2 className="text-xl font-bold">Simplify Group Debts</h2>
-          <p className="text-xs text-slate-300 mt-1 max-w-md">
-            Calculates the mathematically minimum payments required to zero everyone out, with 1-tap UPI deep-links.
-          </p>
-        </div>
-
-        <button
-          onClick={onOpenSettleModal}
-          className="px-6 py-3 bg-olive-primary hover:bg-olive-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-olive-primary/30 flex items-center justify-center gap-2 transition active:scale-[0.98] flex-shrink-0"
-        >
-          <Zap className="w-4 h-4 fill-current" />
-          <span>Settle Up ⚡</span>
-        </button>
-      </div>
-
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -80,10 +62,15 @@ export default function BalancesTab({ group, onOpenSettleModal }) {
           </div>
         ) : balanceEntries.length === 0 ? (
           <div className="py-8 text-center text-slate-500 text-sm">
-            No expenses logged yet. Add an expense to view member balances!
+            No members yet. Invite people from the Members tab.
           </div>
         ) : (
           <div className="space-y-3">
+            {(group.expenses_count ?? 0) === 0 && (
+              <p className="text-xs text-slate-500 text-center pb-1">
+                No expenses yet. Add one from the Expenses tab and balances appear here.
+              </p>
+            )}
             {balanceEntries.map(([name, amount]) => {
               const isOwed = amount > 0.001;
               const owes = amount < -0.001;
@@ -136,13 +123,21 @@ export default function BalancesTab({ group, onOpenSettleModal }) {
           </div>
         )}
 
-        {/* Verification Guarantee */}
-        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
-          <span>Mathematical Balance Guarantee:</span>
-          <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-            <CheckCircle2 className="w-3 h-3" /> Sum of balances = ₹0.00
-          </span>
-        </div>
+        {/* Balance check, calculated from the numbers above */}
+        {!loading && balanceEntries.length > 0 && (
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
+            <span>Balance check</span>
+            {balancesAddUp ? (
+              <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                <CheckCircle2 className="w-3 h-3" /> Everything adds up to ₹0.00
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
+                <AlertCircle className="w-3 h-3" /> Off by ₹{Math.abs(balanceSum).toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

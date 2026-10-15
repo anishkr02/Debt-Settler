@@ -4,6 +4,7 @@ Complete FastAPI backend implementing identity, group invites, multi-payer/unequ
 hybrid debt settlement, two-step payment confirmation, cancel rules, group chat, and retention.
 """
 
+import logging
 import os
 import re
 import secrets
@@ -12,7 +13,9 @@ from typing import Optional, List, Dict
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 RETENTION_ADMIN_KEY = os.getenv("RETENTION_ADMIN_KEY", "")
@@ -25,6 +28,7 @@ from db_models import (
 from auth import get_current_user, get_group_membership, require_group_admin, DEV_MODE
 from expense_helpers import validate_and_compute_payers, compute_splits
 from retention import cleanup_expired_groups
+from membership import add_member_idempotent
 
 # Core algorithm modules (intact & tested)
 from models import (
@@ -39,6 +43,32 @@ from settle import settle
 from upi import build_upi_link
 
 app = FastAPI(title="Debt-Settle API", version="2.0.0")
+
+logger = logging.getLogger("debt_settle")
+
+
+# Anything unexpected becomes a generic 500. The real error goes to the server
+# log only; exception text (SQL, user ids, file paths) never reaches the client.
+# This middleware is added BEFORE CORSMiddleware on purpose, so CORS wraps it
+# and the browser can still read the error response.
+@app.middleware("http")
+async def catch_unhandled_errors(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Something went wrong"})
+
+
+# Two requests racing to create the same row (e.g. same username) -> clean 409.
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    logger.warning("IntegrityError on %s %s: %s", request.method, request.url.path, exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "That already exists or was just taken. Please try again."},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -275,7 +305,12 @@ def update_username(
     current_user.username = new_username
     current_user.username_confirmed = True
     session.add(current_user)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # Someone claimed it between our check and the commit.
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Username is already taken")
     session.refresh(current_user)
 
     return {
@@ -375,7 +410,7 @@ def get_group(
     session: Session = Depends(get_session)
 ):
     """Returns group details, member profiles, and freeze/settlement status."""
-    get_group_membership(group_id, current_user, session)
+    me = get_group_membership(group_id, current_user, session)
     group = session.get(Group, group_id)
     if not group:
         raise HTTPException(404, "Group not found")
@@ -398,11 +433,17 @@ def get_group(
         select(SettlementTransactionDB).where(SettlementTransactionDB.group_id == group_id)
     ).first())
 
+    expenses_count = len(session.exec(
+        select(ExpenseDB).where(ExpenseDB.group_id == group_id)
+    ).all())
+
     return {
         "id": group.id,
         "name": group.name,
         "is_frozen": is_frozen,
         "fully_settled_at": group.fully_settled_at,
+        "is_admin": me.is_admin,            # is the CALLER the admin of this group
+        "expenses_count": expenses_count,
         "members": members_data
     }
 
@@ -429,16 +470,16 @@ def invite_member(
         # Check if user already exists with this email -> add immediately!
         target_user = session.exec(select(User).where(User.email == target_email)).first()
         if target_user:
-            existing_mem = session.exec(select(GroupMember).where(
-                GroupMember.group_id == group_id, GroupMember.user_id == target_user.id
-            )).first()
-            if not existing_mem:
-                mem = GroupMember(group_id=group_id, user_id=target_user.id, is_admin=False)
-                session.add(mem)
-                session.commit()
-                session.refresh(mem)
-                return {"status": "added", "method": "email", "member_id": mem.id}
-            return {"status": "already_member", "method": "email", "member_id": existing_mem.id}
+            mem, created = add_member_idempotent(session, group_id, target_user.id)
+            return {"status": "added" if created else "already_member", "method": "email", "member_id": mem.id}
+
+        # Inviting the same address twice reuses the pending invite.
+        existing_invite = session.exec(select(Invite).where(
+            Invite.group_id == group_id, Invite.invited_email == target_email,
+            Invite.method == "email", Invite.status == "pending"
+        )).first()
+        if existing_invite:
+            return {"status": "pending_invite_created", "invite_id": existing_invite.id}
 
         invite = Invite(group_id=group_id, method="email", invited_email=target_email, status="pending")
         session.add(invite)
@@ -447,11 +488,18 @@ def invite_member(
         return {"status": "pending_invite_created", "invite_id": invite.id}
 
     elif payload.method == "join_link":
-        token = secrets.token_urlsafe(16)
-        invite = Invite(group_id=group_id, method="join_link", join_token=token, status="pending")
-        session.add(invite)
-        session.commit()
-        session.refresh(invite)
+        # One stable link per group: reuse it instead of minting a new one
+        # every time somebody opens the Link tab.
+        existing_link = session.exec(select(Invite).where(
+            Invite.group_id == group_id, Invite.method == "join_link"
+        ).order_by(Invite.id.desc())).first()
+        if existing_link and existing_link.join_token:
+            token = existing_link.join_token
+        else:
+            token = secrets.token_urlsafe(16)
+            invite = Invite(group_id=group_id, method="join_link", join_token=token, status="pending")
+            session.add(invite)
+            session.commit()
         return {"status": "link_created", "join_token": token, "join_url": f"/groups/join/{token}"}
 
     elif payload.method == "username":
@@ -462,16 +510,9 @@ def invite_member(
         if not target_user:
             raise HTTPException(404, f"User '@{lookup}' not found")
         
-        existing_mem = session.exec(select(GroupMember).where(
-            GroupMember.group_id == group_id, GroupMember.user_id == target_user.id
-        )).first()
-        if existing_mem:
-            return {"status": "already_member", "member_id": existing_mem.id}
-        
-        mem = GroupMember(group_id=group_id, user_id=target_user.id, is_admin=False)
-        session.add(mem)
-        session.commit()
-        session.refresh(mem)
+        mem, created = add_member_idempotent(session, group_id, target_user.id)
+        if not created:
+            return {"status": "already_member", "member_id": mem.id}
         return {"status": "added", "method": "username", "member_id": mem.id}
 
     raise HTTPException(400, "Invalid invite method. Choose 'email', 'join_link', or 'username'")
@@ -488,16 +529,9 @@ def join_group_via_link(
     if not invite:
         raise HTTPException(404, "Invalid or expired join link")
 
-    existing_mem = session.exec(select(GroupMember).where(
-        GroupMember.group_id == invite.group_id, GroupMember.user_id == current_user.id
-    )).first()
-    if existing_mem:
-        return {"status": "already_member", "group_id": invite.group_id, "member_id": existing_mem.id}
-
-    mem = GroupMember(group_id=invite.group_id, user_id=current_user.id, is_admin=False)
-    session.add(mem)
-    session.commit()
-    session.refresh(mem)
+    mem, created = add_member_idempotent(session, invite.group_id, current_user.id)
+    if not created:
+        return {"status": "already_member", "group_id": invite.group_id, "member_id": mem.id}
     return {"status": "joined", "group_id": invite.group_id, "member_id": mem.id}
 
 
@@ -649,19 +683,21 @@ def get_balances(
     """Computes live net balances for all members."""
     get_group_membership(group_id, current_user, session)
     member_by_id, algo_expenses, algo_debts = _load_algo_inputs(group_id, session)
-    if not algo_expenses and not algo_debts:
-        return {m.id: 0.0 for m in member_by_id.values()}
 
-    balances = compute_balances(algo_expenses, algo_debts)
-    
-    result = {}
-    for mid, bal in balances.items():
-        m_id_int = int(mid)
-        if m_id_int in member_by_id:
-            m = member_by_id[m_id_int]
-            u = session.get(User, m.user_id) if m.user_id else None
-            name = u.username if u else f"Member {m.id}"
-            result[name] = bal
+    # Name every member the same way on every path (username, or "Member N").
+    names = {}
+    for m in member_by_id.values():
+        u = session.get(User, m.user_id) if m.user_id else None
+        names[m.id] = u.username if u else f"Member {m.id}"
+
+    # Everyone appears, even people with no expenses yet (balance 0.0).
+    result = {name: 0.0 for name in names.values()}
+
+    if algo_expenses or algo_debts:
+        balances = compute_balances(algo_expenses, algo_debts)
+        for mid, bal in balances.items():
+            if int(mid) in names:
+                result[names[int(mid)]] = bal
     return result
 
 
