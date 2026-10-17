@@ -15,7 +15,11 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlmodel import Session, select
 
 RETENTION_ADMIN_KEY = os.getenv("RETENTION_ADMIN_KEY", "")
@@ -45,6 +49,10 @@ from upi import build_upi_link
 app = FastAPI(title="Debt-Settle API", version="2.0.0")
 
 logger = logging.getLogger("debt_settle")
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+limiter = Limiter(key_func=get_remote_address, enabled=RATE_LIMIT_ENABLED)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # Anything unexpected becomes a generic 500. The real error goes to the server
@@ -98,8 +106,17 @@ class UsernameUpdate(BaseModel):
     username: str
 
 
+class MemberUpiUpdate(BaseModel):
+    upi_id: Optional[str]
+
+
+class ConsentUpdate(BaseModel):
+    version: str
+
+
 # 3-20 chars, lowercase letters / digits / underscore only
 USERNAME_RE = re.compile(r'^[a-z0-9_]{3,20}$')
+UPI_ID_RE = re.compile(r'^[A-Za-z0-9._-]{2,64}@[A-Za-z][A-Za-z0-9]{1,63}$')
 
 
 def normalize_username(raw: str) -> str:
@@ -212,7 +229,8 @@ def _load_algo_inputs(group_id: int, session: Session):
 # -------------------------------------------------------------
 
 @app.post("/auth/signup")
-def signup(payload: UserSignup, session: Session = Depends(get_session)):
+@limiter.limit("10/minute")
+def signup(payload: UserSignup, request: Request, session: Session = Depends(get_session)):
     """Registers or sets up a user profile in DEV_MODE. Disabled in production."""
     if not DEV_MODE:
         raise HTTPException(
@@ -266,7 +284,8 @@ def signup(payload: UserSignup, session: Session = Depends(get_session)):
 
 
 @app.get("/auth/me")
-def get_me(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+@limiter.limit("30/minute")
+def get_me(request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Returns profile of currently authenticated user and active group count."""
     memberships = session.exec(
         select(GroupMember).where(GroupMember.user_id == current_user.id, GroupMember.active == True)
@@ -276,13 +295,122 @@ def get_me(current_user: User = Depends(get_current_user), session: Session = De
         "username": current_user.username,
         "email": current_user.email,
         "username_confirmed": current_user.username_confirmed,
+        "consented_at": current_user.consented_at,
+        "consent_version": current_user.consent_version,
         "group_count": len(memberships)
     }
 
 
+@app.post("/auth/me/consent")
+@limiter.limit("10/minute")
+def record_consent(
+    payload: ConsentUpdate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    current_user.consented_at = datetime.now(timezone.utc)
+    current_user.consent_version = payload.version
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+    return {
+        "consented_at": current_user.consented_at,
+        "consent_version": current_user.consent_version
+    }
+
+
+@app.delete("/auth/me")
+@limiter.limit("10/minute")
+def delete_my_account(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    memberships = session.exec(
+        select(GroupMember).where(GroupMember.user_id == current_user.id)
+    ).all()
+    member_ids = [membership.id for membership in memberships]
+
+    if member_ids:
+        transactions = session.exec(
+            select(SettlementTransactionDB).where(
+                or_(
+                    SettlementTransactionDB.from_member_id.in_(member_ids),
+                    SettlementTransactionDB.to_member_id.in_(member_ids)
+                )
+            )
+        ).all()
+        for transaction in transactions:
+            group = session.get(Group, transaction.group_id)
+            if group and group.fully_settled_at is None and transaction.status != "confirmed":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot delete your account while a settlement transaction is unconfirmed."
+                )
+
+    for membership in memberships:
+        if not membership.is_admin:
+            continue
+        group = session.get(Group, membership.group_id)
+        if not group or group.fully_settled_at is not None:
+            continue
+        other_members = session.exec(
+            select(GroupMember).where(
+                GroupMember.group_id == membership.group_id,
+                GroupMember.id != membership.id
+            )
+        ).first()
+        if other_members:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete your account while you administer an unsettled group with other members."
+            )
+
+    old_email = current_user.email
+    if not DEV_MODE:
+        if not current_user.firebase_uid:
+            raise HTTPException(
+                status_code=502,
+                detail="Could not delete your Firebase account; no account data was changed. Please retry."
+            )
+        try:
+            from firebase_admin import auth as fb_auth
+            fb_auth.delete_user(current_user.firebase_uid)
+        except Exception:
+            logger.exception("Firebase user deletion failed")
+            raise HTTPException(
+                status_code=502,
+                detail="Could not delete your Firebase account; no account data was changed. Please retry."
+            )
+
+    deleted_identifier = f"deleted_{current_user.id}"
+    current_user.username = deleted_identifier
+    current_user.email = f"{deleted_identifier}@invalid.local"
+    current_user.firebase_uid = deleted_identifier
+    for membership in memberships:
+        membership.upi_id = None
+
+    pending_invites = session.exec(
+        select(Invite).where(
+            Invite.invited_email == old_email,
+            Invite.status == "pending"
+        )
+    ).all()
+    for invite in pending_invites:
+        session.delete(invite)
+
+    session.add(current_user)
+    session.add_all(memberships)
+    session.commit()
+    return {"status": "deleted"}
+
+
 @app.patch("/auth/me/username")
+@limiter.limit("10/minute")
 def update_username(
     payload: UsernameUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -322,7 +450,8 @@ def update_username(
 
 
 @app.get("/users/search")
-def search_users(q: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+@limiter.limit("30/minute")
+def search_users(q: str, request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Search users by username prefix. Returns only {id, username} — never email."""
     q = q.strip().lower().lstrip('@')  # normalize: lowercase, strip leading @
     if len(q) < 2:
@@ -448,10 +577,40 @@ def get_group(
     }
 
 
+@app.patch("/groups/{group_id}/members/me")
+def update_my_group_member(
+    group_id: int,
+    payload: MemberUpiUpdate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Updates the authenticated user's UPI ID for this group."""
+    membership = get_group_membership(group_id, current_user, session)
+    if payload.upi_id not in (None, "") and not UPI_ID_RE.fullmatch(payload.upi_id):
+        raise HTTPException(status_code=422, detail="Invalid UPI ID format")
+
+    membership.upi_id = payload.upi_id or None
+    session.add(membership)
+    session.commit()
+    session.refresh(membership)
+
+    return {
+        "id": membership.id,
+        "user_id": membership.user_id,
+        "name": current_user.username,
+        "email": current_user.email,
+        "upi_id": membership.upi_id,
+        "is_admin": membership.is_admin,
+        "active": membership.active
+    }
+
+
 @app.post("/groups/{group_id}/invite")
+@limiter.limit("10/minute")
 def invite_member(
     group_id: int,
     payload: InviteCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -519,8 +678,10 @@ def invite_member(
 
 
 @app.post("/groups/join/{join_token}")
+@limiter.limit("10/minute")
 def join_group_via_link(
     join_token: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -772,10 +933,9 @@ def get_settlements(
         from_name = from_u.username if from_u else f"Member {s.from_member_id}"
         to_name = to_u.username if to_u else f"Member {s.to_member_id}"
 
-        upi_link = None
-        if to_m and to_m.upi_id:
-            algo_member = AlgoMember(id=str(to_m.id), name=to_name, upi_id=to_m.upi_id)
-            upi_link = build_upi_link(algo_member, s.amount, note="Debt Settlement")
+        to_upi_id = to_m.upi_id if to_m else None
+        algo_member = AlgoMember(id=str(to_m.id) if to_m else str(s.to_member_id), name=to_name, upi_id=to_upi_id)
+        upi_link = build_upi_link(algo_member, s.amount, note="Debt Settlement")
 
         result.append({
             "id": s.id,
@@ -786,6 +946,7 @@ def get_settlements(
             "amount": s.amount,
             "status": s.status,
             "algorithm_used": s.algorithm_used,
+            "to_upi_id": to_upi_id,
             "upi_link": upi_link,
             "paid_at": s.paid_at,
             "confirmed_at": s.confirmed_at

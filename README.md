@@ -28,6 +28,9 @@ For in-depth architectural diagrams, design decisions, and test specifications, 
   - Automatically dispatches between an **Exact Backtracking Solver** (branch-and-bound DFS, guaranteed true minimum for $\le 12$ balances) and a **Greedy Heap Solver** ($O(n \log n)$ for $> 12$ balances).
 - **One-Tap UPI Deep Links**: Generates native `upi://pay?pa=...&pn=...&am=...&cu=INR&tn=Settlement` URLs for instant payment via Google Pay, PhonePe, Paytm, and BHIM.
 - **Identity & Dev Auth Bypass**: Server-derived identity with optional Firebase token verification and `DEV_MODE=true` header bypass (`X-Dev-Username`).
+- **Profile Consent & Deletion**: Users can record consent versions and delete their account with protected handling for unsettled groups and payments.
+- **Per-Group UPI IDs**: Members can update or clear their own UPI ID; settlement responses always include a UPI URI, using `upi://pay` when no payee ID is set.
+- **Rate Limiting**: SlowAPI limits authentication, user search, and group invite/join requests. `RATE_LIMIT_ENABLED` defaults to `true`; set it to `false` only where rate limiting should be disabled.
 - **Flexible Expense Splits**:
   - Single-payer equal splits (`/expenses/equal`)
   - Multi-payer expenses (multiple people contributing to one cost)
@@ -59,6 +62,8 @@ uvicorn main:app --reload
 Interactive API documentation (Swagger UI) is available at:
 👉 **http://127.0.0.1:8000/docs**
 
+Set `RATE_LIMIT_ENABLED=false` in the environment to disable API rate limiting; it is enabled by default.
+
 ### Run Test Suite
 
 ```bash
@@ -73,10 +78,14 @@ python -m pytest -v
 | :--- | :--- | :--- | :--- |
 | `POST` | `/auth/signup` | Register username and auto-claim pending email invites | Public |
 | `GET` | `/auth/me` | Current user profile and active group count | Authenticated |
+| `POST` | `/auth/me/consent` | Record the current consent version and timestamp | Authenticated |
+| `DELETE` | `/auth/me` | Delete and anonymize the current account when group/payment constraints allow | Authenticated |
+| `PATCH` | `/auth/me/username` | Confirm a newly provisioned username | Authenticated |
 | `GET` | `/users/search` | Search users by username prefix | Authenticated |
 | `POST` | `/groups` | Create group (creator becomes admin) | Authenticated |
 | `GET` | `/groups` | List groups the user belongs to | Authenticated |
 | `GET` | `/groups/{id}` | Group details, members, and settlement status | Member |
+| `PATCH` | `/groups/{id}/members/me` | Update or clear the caller's UPI ID for this group | Member |
 | `POST` | `/groups/{id}/invite` | Invite by `email`, `join_link`, or `username` | Member |
 | `POST` | `/groups/join/{join_token}` | Join group via shareable link | Authenticated |
 | `POST` | `/groups/{id}/expenses/equal` | Add single-payer equal split expense | Member |

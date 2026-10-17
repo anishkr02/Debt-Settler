@@ -19,7 +19,7 @@ def build_upi_link(
     note: str = "Debt-Settle payment",
 ) -> str:
     if not payee.upi_id:
-        raise ValueError(f"Member '{payee.name}' has no UPI ID on file.")
+        return "upi://pay"
 
     params = {
         "pa": payee.upi_id,

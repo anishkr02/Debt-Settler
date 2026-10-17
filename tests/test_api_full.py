@@ -1,5 +1,6 @@
 import os
 os.environ["DEV_MODE"] = "true"
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 import pytest
 from datetime import datetime, timezone, timedelta
 from fastapi.testclient import TestClient
@@ -56,6 +57,156 @@ def test_user_signup_and_me():
     me_res = client.get("/auth/me", headers={"X-Dev-Username": "alice"})
     assert me_res.status_code == 200
     assert me_res.json()["username"] == "alice"
+    assert me_res.json()["consented_at"] is None
+    assert me_res.json()["consent_version"] is None
+
+
+def test_consent_records_version_and_timestamp():
+    client.post("/auth/signup", json={"username": "consenting_user", "email": "consent@example.com"})
+
+    consent = client.post(
+        "/auth/me/consent",
+        json={"version": "2026-10"},
+        headers={"X-Dev-Username": "consenting_user"}
+    )
+    assert consent.status_code == 200
+    assert consent.json()["consent_version"] == "2026-10"
+    assert consent.json()["consented_at"] is not None
+
+    profile = client.get("/auth/me", headers={"X-Dev-Username": "consenting_user"})
+    assert profile.status_code == 200
+    assert profile.json()["consent_version"] == "2026-10"
+    assert profile.json()["consented_at"] == consent.json()["consented_at"]
+
+
+def test_account_deletion_refuses_unconfirmed_settlement():
+    client.post("/auth/signup", json={"username": "settlement_user", "email": "settlement_user@example.com"})
+    client.post("/auth/signup", json={"username": "settlement_admin", "email": "settlement_admin@example.com"})
+    group = client.post(
+        "/groups",
+        json={"name": "Unconfirmed Group"},
+        headers={"X-Dev-Username": "settlement_admin"}
+    ).json()
+    group_id = group["id"]
+    client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "settlement_user"},
+        headers={"X-Dev-Username": "settlement_admin"}
+    )
+    members = client.get(
+        f"/groups/{group_id}", headers={"X-Dev-Username": "settlement_admin"}
+    ).json()["members"]
+    member_ids = {member["name"]: member["id"] for member in members}
+    with Session(test_engine) as session:
+        session.add(SettlementTransactionDB(
+            group_id=group_id,
+            from_member_id=member_ids["settlement_user"],
+            to_member_id=member_ids["settlement_admin"],
+            amount=10,
+            status="paid_pending_confirmation"
+        ))
+        session.commit()
+
+    response = client.delete("/auth/me", headers={"X-Dev-Username": "settlement_user"})
+    assert response.status_code == 400
+    assert "unconfirmed" in response.json()["detail"].lower()
+
+
+def test_account_deletion_refuses_admin_of_unsettled_group():
+    client.post("/auth/signup", json={"username": "group_admin", "email": "group_admin@example.com"})
+    client.post("/auth/signup", json={"username": "group_member", "email": "group_member@example.com"})
+    group = client.post(
+        "/groups",
+        json={"name": "Admin Group"},
+        headers={"X-Dev-Username": "group_admin"}
+    ).json()
+    client.post(
+        f"/groups/{group['id']}/invite",
+        json={"method": "username", "username": "group_member"},
+        headers={"X-Dev-Username": "group_admin"}
+    )
+
+    response = client.delete("/auth/me", headers={"X-Dev-Username": "group_admin"})
+    assert response.status_code == 400
+    assert "administer" in response.json()["detail"].lower()
+
+
+def test_account_deletion_firebase_failure_is_retryable_then_anonymizes(monkeypatch):
+    import main
+
+    client.post("/auth/signup", json={"username": "delete_user", "email": "delete@example.com"})
+    group = client.post(
+        "/groups",
+        json={"name": "Delete Group", "admin_upi_id": "delete@upi"},
+        headers={"X-Dev-Username": "delete_user"}
+    ).json()
+    client.post(
+        f"/groups/{group['id']}/expenses/equal",
+        json={
+            "description": "Retained expense",
+            "total_amount": 25,
+            "paid_by": group["admin_member_id"],
+            "split_among": [group["admin_member_id"]]
+        },
+        headers={"X-Dev-Username": "delete_user"}
+    )
+    client.post(
+        f"/groups/{group['id']}/chat",
+        json={"body": "Retained message"},
+        headers={"X-Dev-Username": "delete_user"}
+    )
+    with Session(test_engine) as session:
+        user = session.exec(select(User).where(User.username == "delete_user")).one()
+        user.firebase_uid = "firebase-delete-uid"
+        session.add(user)
+        session.add(Invite(
+            group_id=group["id"],
+            method="email",
+            invited_email="delete@example.com",
+            status="pending"
+        ))
+        session.commit()
+        user_id = user.id
+
+    monkeypatch.setattr(main, "DEV_MODE", False)
+    from firebase_admin import auth as fb_auth
+    deleted_uids = []
+
+    def fail_firebase_delete(uid):
+        deleted_uids.append(uid)
+        raise RuntimeError("Firebase unavailable")
+
+    monkeypatch.setattr(fb_auth, "delete_user", fail_firebase_delete)
+    failed = client.delete("/auth/me", headers={"X-Dev-Username": "delete_user"})
+    assert failed.status_code == 502
+    assert "no account data was changed" in failed.json()["detail"].lower()
+    with Session(test_engine) as session:
+        user = session.get(User, user_id)
+        assert user.username == "delete_user"
+        assert user.email == "delete@example.com"
+        assert user.firebase_uid == "firebase-delete-uid"
+        assert session.exec(select(Invite).where(Invite.invited_email == "delete@example.com")).first()
+    assert deleted_uids == ["firebase-delete-uid"]
+
+    monkeypatch.setattr(fb_auth, "delete_user", lambda uid: deleted_uids.append(uid))
+    deleted = client.delete("/auth/me", headers={"X-Dev-Username": "delete_user"})
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+    assert deleted_uids == ["firebase-delete-uid", "firebase-delete-uid"]
+
+    with Session(test_engine) as session:
+        user = session.get(User, user_id)
+        assert user.username == f"deleted_{user_id}"
+        assert user.email == f"deleted_{user_id}@invalid.local"
+        assert user.firebase_uid == f"deleted_{user_id}"
+        membership = session.exec(
+            select(GroupMember).where(GroupMember.user_id == user_id)
+        ).one()
+        assert membership.upi_id is None
+        assert session.exec(select(Invite).where(Invite.invited_email == "delete@example.com")).first() is None
+        assert session.get(Group, group["id"]) is not None
+        assert session.exec(select(ExpenseDB).where(ExpenseDB.group_id == group["id"])).first() is not None
+        assert session.exec(select(ChatMessageDB).where(ChatMessageDB.group_id == group["id"])).first() is not None
 
 
 def test_group_creation_and_invites():
@@ -120,6 +271,69 @@ def test_group_creation_and_invites():
     g_res2 = client.get(f"/groups/{group_id}", headers={"X-Dev-Username": "david"})
     assert g_res2.status_code == 200
     assert len(g_res2.json()["members"]) == 4
+
+
+def test_member_upi_patch_is_self_scoped_and_validated():
+    client.post("/auth/signup", json={"username": "upi_admin", "email": "upi_admin@example.com"})
+    client.post("/auth/signup", json={"username": "upi_member", "email": "upi_member@example.com"})
+    group = client.post(
+        "/groups",
+        json={"name": "UPI Group", "admin_upi_id": "admin@upi"},
+        headers={"X-Dev-Username": "upi_admin"}
+    ).json()
+    group_id = group["id"]
+    client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "upi_member"},
+        headers={"X-Dev-Username": "upi_admin"}
+    )
+
+    valid = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "member.test-1@okAxis2"},
+        headers={"X-Dev-Username": "upi_member"}
+    )
+    assert valid.status_code == 200
+    assert valid.json()["upi_id"] == "member.test-1@okAxis2"
+
+    invalid = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "bad@1"},
+        headers={"X-Dev-Username": "upi_member"}
+    )
+    assert invalid.status_code == 422
+    members = client.get(
+        f"/groups/{group_id}", headers={"X-Dev-Username": "upi_admin"}
+    ).json()["members"]
+    assert next(member for member in members if member["name"] == "upi_admin")["upi_id"] == "admin@upi"
+
+    cleared = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": ""},
+        headers={"X-Dev-Username": "upi_member"}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["upi_id"] is None
+
+    client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "member@upi"},
+        headers={"X-Dev-Username": "upi_member"}
+    )
+    cleared_with_null = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": None},
+        headers={"X-Dev-Username": "upi_member"}
+    )
+    assert cleared_with_null.status_code == 200
+    assert cleared_with_null.json()["upi_id"] is None
+
+    not_a_member = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "outsider@upi"},
+        headers={"X-Dev-Username": "upi_outsider"}
+    )
+    assert not_a_member.status_code == 403
 
 
 def test_multi_payer_and_unequal_splits():
@@ -245,7 +459,10 @@ def test_settlement_lifecycle_confirmation_and_freeze():
     assert tx["to_name"] == "s_alice"
     assert tx["amount"] == 250.0
     assert tx["status"] == "pending"
-    assert "upi://pay" in tx["upi_link"]
+    assert tx["to_upi_id"] == "alice@upi"
+    assert tx["upi_link"].startswith("upi://pay?pa=alice%40upi&")
+    assert "am=250.00" in tx["upi_link"]
+    assert "cu=INR" in tx["upi_link"]
 
     # Verify group is FROZEN: cannot add new expenses or debts
     frozen_exp = client.post(
@@ -317,6 +534,45 @@ def test_settlement_lifecycle_confirmation_and_freeze():
     g_final = client.get(f"/groups/{g_id}", headers={"X-Dev-Username": "s_alice"}).json()
     assert g_final["fully_settled_at"] is not None
     assert g_final["is_frozen"] is True
+
+
+def test_settlement_payload_uses_bare_link_without_receiver_upi():
+    client.post("/auth/signup", json={"username": "bare_admin", "email": "bare_admin@example.com"})
+    client.post("/auth/signup", json={"username": "bare_member", "email": "bare_member@example.com"})
+    group = client.post(
+        "/groups",
+        json={"name": "Bare UPI Group"},
+        headers={"X-Dev-Username": "bare_admin"}
+    ).json()
+    group_id = group["id"]
+    client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "bare_member"},
+        headers={"X-Dev-Username": "bare_admin"}
+    )
+    members = client.get(
+        f"/groups/{group_id}", headers={"X-Dev-Username": "bare_admin"}
+    ).json()["members"]
+    member_ids = {member["name"]: member["id"] for member in members}
+
+    expense = client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Meal",
+            "total_amount": 100,
+            "paid_by": member_ids["bare_admin"],
+            "split_among": [member_ids["bare_admin"], member_ids["bare_member"]]
+        },
+        headers={"X-Dev-Username": "bare_admin"}
+    )
+    assert expense.status_code == 200
+    settlements = client.post(
+        f"/groups/{group_id}/settle",
+        headers={"X-Dev-Username": "bare_admin"}
+    ).json()["settlements"]
+    assert len(settlements) == 1
+    assert settlements[0]["to_upi_id"] is None
+    assert settlements[0]["upi_link"] == "upi://pay"
 
 
 def test_group_chat_and_retention():
@@ -397,6 +653,21 @@ def test_user_search_wildcard_injection_safe():
     res2 = client.get("/users/search?q=%25%25", headers={"X-Dev-Username": "requester"})
     assert res2.status_code == 200
     assert res2.json() == [], f"Expected empty for q=%%, got {res2.json()}"
+
+
+def test_rate_limit_returns_429_on_request_burst(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main.limiter, "enabled", True)
+    responses = [
+        client.post(
+            "/auth/signup",
+            json={"username": f"burst_{index}", "email": f"burst_{index}@example.com"}
+        )
+        for index in range(11)
+    ]
+    assert all(response.status_code == 200 for response in responses[:10])
+    assert responses[10].status_code == 429
 
 
 def test_username_validation_and_normalization():

@@ -14,6 +14,8 @@ class User(SQLModel, table=True):
     email: str = Field(index=True)
     username: str = Field(unique=True, index=True)
     username_confirmed: bool = Field(default=False)
+    consented_at: Optional[datetime] = Field(default=None)
+    consent_version: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     memberships: List["GroupMember"] = Relationship(back_populates="user")
