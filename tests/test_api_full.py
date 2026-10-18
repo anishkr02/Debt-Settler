@@ -688,10 +688,105 @@ def test_rate_limit_returns_429_on_request_burst(monkeypatch):
             "/auth/signup",
             json={"username": f"burst_{index}", "email": f"burst_{index}@example.com"}
         )
-        for index in range(11)
+        for index in range(21)
     ]
-    assert all(response.status_code == 200 for response in responses[:10])
-    assert responses[10].status_code == 429
+    assert all(response.status_code == 200 for response in responses[:20])
+    assert responses[20].status_code == 429
+
+
+def test_rate_limit_per_person_and_isolation(monkeypatch):
+    """
+    Prompt 2A-1b:
+    - Two different users from the same IP don't share a limit.
+    - One user exceeding 60 searches gets 429 while another user doesn't.
+    - One admin can send 25 invites within a minute (limit is 60/min).
+    """
+    import main
+
+    monkeypatch.setattr(main.limiter, "enabled", True)
+
+    user_a = {"X-Dev-Username": "rate_user_a"}
+    user_b = {"X-Dev-Username": "rate_user_b"}
+
+    # 1 & 2: User A does 60 searches and hits 429 on the 61st, while User B is unaffected
+    for _ in range(60):
+        res = client.get("/users/search?q=test", headers=user_a)
+        assert res.status_code == 200
+
+    res_a_61 = client.get("/users/search?q=test", headers=user_a)
+    assert res_a_61.status_code == 429
+
+    # User B from the same client IP has separate rate limit and succeeds
+    res_b = client.get("/users/search?q=test", headers=user_b)
+    assert res_b.status_code == 200
+
+    # 3: Admin sending 25 invites within a minute succeeds without 429
+    admin = {"X-Dev-Username": "rate_admin"}
+    group = client.post("/groups", json={"name": "Rate Limit Test Group"}, headers=admin).json()
+    gid = group["id"]
+
+    for i in range(25):
+        inv_res = client.post(
+            f"/groups/{gid}/invite",
+            json={"method": "email", "email": f"rl_invite_{i}@example.com"},
+            headers=admin
+        )
+        assert inv_res.status_code == 200
+
+
+def test_account_deletion_refuses_non_zero_balance_and_allows_at_zero():
+    """
+    Prompt 2A-1b:
+    Deletion is refused for a user with a non-zero balance and allowed at zero.
+    """
+    admin = {"X-Dev-Username": "del_admin"}
+    debtor = {"X-Dev-Username": "del_debtor"}
+
+    group = client.post("/groups", json={"name": "Bal Group"}, headers=admin).json()
+    gid = group["id"]
+    admin_mid = group["admin_member_id"]
+
+    # Create debtor user first
+    client.post("/auth/signup", json={"username": "del_debtor", "email": "del_debtor@example.com"})
+
+    # Add debtor
+    inv = client.post(f"/groups/{gid}/invite", json={"method": "username", "username": "del_debtor"}, headers=admin).json()
+    debtor_mid = inv["member_id"]
+
+    # Expense: admin paid 100, split between admin and debtor
+    client.post(
+        f"/groups/{gid}/expenses/equal",
+        json={
+            "description": "Lunch",
+            "total_amount": 100,
+            "paid_by": admin_mid,
+            "split_among": [admin_mid, debtor_mid]
+        },
+        headers=admin
+    )
+
+    # Debtor has non-zero balance (-50.0) -> deletion refused with 400
+    res = client.delete("/auth/me", headers=debtor)
+    assert res.status_code == 400
+    assert "Settle up before deleting your account" in res.json()["detail"]
+
+    # Debtor balances the account: debtor pays 50 for admin's share
+    client.post(
+        f"/groups/{gid}/expenses/equal",
+        json={
+            "description": "Settling lunch",
+            "total_amount": 50,
+            "paid_by": debtor_mid,
+            "split_among": [admin_mid]
+        },
+        headers=debtor
+    )
+
+    # Now debtor has 0.0 net balance -> deletion allowed
+    res_ok = client.delete("/auth/me", headers=debtor)
+    assert res_ok.status_code == 200
+    assert res_ok.json()["status"] == "deleted"
+
 
 
 def test_username_validation_and_normalization():

@@ -70,6 +70,12 @@ Set `RATE_LIMIT_ENABLED=false` in the environment to disable API rate limiting; 
 python -m pytest -v
 ```
 
+To run the API integration tests against a PostgreSQL 16 database:
+
+```bash
+TEST_DATABASE_URL="postgresql+psycopg://postgres:password@localhost:5432/debt_settle_test" python -m pytest tests/test_api_full.py -v
+```
+
 ## Deploy
 
 Use Python **3.12.5** (pinned in `.python-version`). Configure the variables below in the deployment platform; do not commit credentials. For production, set a PostgreSQL `DATABASE_URL`, `DEV_MODE=false`, a Firebase service account, and the deployed frontend origins.
@@ -77,7 +83,7 @@ Use Python **3.12.5** (pinned in `.python-version`). Configure the variables bel
 Run migrations before starting the API:
 
 ```bash
-alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
+alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
 ```
 
 | Variable | Purpose | Default / guidance |

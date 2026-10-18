@@ -18,8 +18,13 @@ def initialize_firebase(
     credential_path: str,
     credential_json: str
 ) -> bool:
-    if dev_mode:
-        return False
+    if not credential_path and not credential_json:
+        if dev_mode:
+            return False
+        raise RuntimeError(
+            "Firebase Admin could not be initialized; configure a valid "
+            "FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON."
+        )
 
     try:
         import firebase_admin
@@ -38,6 +43,8 @@ def initialize_firebase(
         return True
     except Exception as exc:
         logger.exception("Firebase Admin initialization failed")
+        if dev_mode:
+            return False
         raise RuntimeError(
             "Firebase Admin could not be initialized; configure a valid "
             "FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON."

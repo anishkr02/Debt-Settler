@@ -1,6 +1,5 @@
 import os
 from dotenv import load_dotenv
-from sqlalchemy import DateTime, inspect, text
 from sqlmodel import SQLModel, create_engine, Session
 
 load_dotenv()
@@ -28,13 +27,6 @@ def init_db():
         return
 
     SQLModel.metadata.create_all(engine)
-    columns = {column["name"] for column in inspect(engine).get_columns("user")}
-    datetime_type = DateTime(timezone=True).compile(dialect=engine.dialect)
-    with engine.begin() as connection:
-        if "consented_at" not in columns:
-            connection.execute(text(f"ALTER TABLE user ADD COLUMN consented_at {datetime_type}"))
-        if "consent_version" not in columns:
-            connection.execute(text("ALTER TABLE user ADD COLUMN consent_version VARCHAR"))
 
 
 def get_session():

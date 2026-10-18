@@ -4,6 +4,7 @@ Complete FastAPI backend implementing identity, group invites, multi-payer/unequ
 hybrid debt settlement, two-step payment confirmation, cancel rules, group chat, and retention.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -19,7 +20,6 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqlmodel import Session, select
 
 RETENTION_ADMIN_KEY = os.getenv("RETENTION_ADMIN_KEY", "")
@@ -49,8 +49,29 @@ from upi import build_upi_link
 app = FastAPI(title="Debt-Settle API", version="2.0.0")
 
 logger = logging.getLogger("debt_settle")
+
+
+def rate_limit_key_func(request: Request) -> str:
+    """Per-person rate limit key: SHA-256 of Authorization, or dev user, or client IP."""
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        return hashlib.sha256(auth_header.encode("utf-8")).hexdigest()[:16]
+
+    dev_user = request.headers.get("X-Dev-Username") or request.headers.get("X-Dev-User-Id")
+    if dev_user:
+        return f"dev:{dev_user.strip().lower()}"
+
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+
 RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
-limiter = Limiter(key_func=get_remote_address, enabled=RATE_LIMIT_ENABLED)
+limiter = Limiter(key_func=rate_limit_key_func, enabled=RATE_LIMIT_ENABLED)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 CORS_DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -256,7 +277,7 @@ def _load_algo_inputs(group_id: int, session: Session):
 # -------------------------------------------------------------
 
 @app.post("/auth/signup")
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")
 def signup(payload: UserSignup, request: Request, session: Session = Depends(get_session)):
     """Registers or sets up a user profile in DEV_MODE. Disabled in production."""
     if not DEV_MODE:
@@ -311,7 +332,7 @@ def signup(payload: UserSignup, request: Request, session: Session = Depends(get
 
 
 @app.get("/auth/me")
-@limiter.limit("30/minute")
+@limiter.limit("60/minute")
 def get_me(request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Returns profile of currently authenticated user and active group count."""
     memberships = session.exec(
@@ -374,6 +395,21 @@ def delete_my_account(
                 raise HTTPException(
                     status_code=400,
                     detail="Cannot delete your account while a settlement transaction is unconfirmed."
+                )
+
+    # Refuse if the user has a non-zero balance in any group that is not fully settled
+    for membership in memberships:
+        group = session.get(Group, membership.group_id)
+        if not group or group.fully_settled_at is not None:
+            continue
+        _, algo_expenses, algo_debts = _load_algo_inputs(membership.group_id, session)
+        if algo_expenses or algo_debts:
+            balances = compute_balances(algo_expenses, algo_debts)
+            user_balance = balances.get(str(membership.id), 0.0)
+            if abs(user_balance) > 0.001:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Settle up before deleting your account"
                 )
 
     for membership in memberships:
@@ -477,7 +513,7 @@ def update_username(
 
 
 @app.get("/users/search")
-@limiter.limit("30/minute")
+@limiter.limit("60/minute")
 def search_users(q: str, request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Search users by username prefix. Returns only {id, username} — never email."""
     q = q.strip().lower().lstrip('@')  # normalize: lowercase, strip leading @
@@ -633,7 +669,7 @@ def update_my_group_member(
 
 
 @app.post("/groups/{group_id}/invite")
-@limiter.limit("10/minute")
+@limiter.limit("60/minute")
 def invite_member(
     group_id: int,
     payload: InviteCreate,
@@ -705,7 +741,7 @@ def invite_member(
 
 
 @app.post("/groups/join/{join_token}")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 def join_group_via_link(
     join_token: str,
     request: Request,
