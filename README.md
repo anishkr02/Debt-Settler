@@ -98,8 +98,11 @@ alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-hea
 | `VITE_FIREBASE_AUTH_DOMAIN` | Frontend Firebase auth domain. | Set during frontend build. |
 | `VITE_FIREBASE_PROJECT_ID` | Frontend Firebase project ID. | Set during frontend build. |
 | `VITE_FIREBASE_APP_ID` | Frontend Firebase application ID. | Set during frontend build. |
+| `VITE_CONTACT_EMAIL` | Public contact address shown on the privacy page. | `suanshkumar6@gmail.com`. |
+| `VITE_FEEDBACK_URL` | Optional feedback form or page URL. | Unset hides the feedback link. |
+| `VITE_SENTRY_DSN` | Enables frontend Sentry reporting. | Unset disables Sentry; PII is not sent. |
 
-Copy `.env.example` for local configuration and fill values locally; it intentionally contains no configured values. Firebase credentials belong in the deployment secret store, never in source control. `/health` is an unauthenticated process health check.
+Copy `.env.example` for local configuration and fill in the values required for your environment. The frontend example includes the public contact address shown on the privacy page. Firebase credentials belong in the deployment secret store, never in source control. `/health` is an unauthenticated process health check.
 
 To create a schema migration after changing the SQLModel models:
 
