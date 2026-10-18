@@ -70,6 +70,51 @@ Set `RATE_LIMIT_ENABLED=false` in the environment to disable API rate limiting; 
 python -m pytest -v
 ```
 
+## Deploy
+
+Use Python **3.12.5** (pinned in `.python-version`). Configure the variables below in the deployment platform; do not commit credentials. For production, set a PostgreSQL `DATABASE_URL`, `DEV_MODE=false`, a Firebase service account, and the deployed frontend origins.
+
+Run migrations before starting the API:
+
+```bash
+alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+| Variable | Purpose | Default / guidance |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | Database connection URL. `postgres://` is normalized to `postgresql://` and PostgreSQL URLs use psycopg 3. | `sqlite:///./debt_settle.db` for local use; use PostgreSQL in deployment. |
+| `PORT` | HTTP port for Uvicorn. | Set by the hosting platform; use `8000` locally. |
+| `DEV_MODE` | Enables development header authentication and signup. | `false`; never enable in production. |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed browser origins. | `http://localhost:5173,http://127.0.0.1:5173`. |
+| `FIREBASE_SERVICE_ACCOUNT_PATH` | Path to a Firebase service-account JSON file. | Optional when `FIREBASE_SERVICE_ACCOUNT_JSON` is supplied; required in production otherwise. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Raw Firebase service-account JSON. | Optional when `FIREBASE_SERVICE_ACCOUNT_PATH` is supplied; takes precedence if both are set. Keep secret. |
+| `RATE_LIMIT_ENABLED` | Enables SlowAPI limits on authentication, search, invites, and joins. | `true`. |
+| `RETENTION_ADMIN_KEY` | Secret required by `POST /admin/retention/cleanup`. | Unset disables authorization for that endpoint. Set a strong secret if using it. |
+| `SENTRY_DSN` | Enables Sentry error reporting. | Unset disables Sentry; default PII and request-body capture are disabled. |
+| `TEST_DATABASE_URL` | Optional database URL for API integration tests. | `sqlite:///:memory:`; set to a disposable PostgreSQL database to run integration tests against PostgreSQL. |
+| `VITE_API_URL` | Frontend API base URL. | `http://localhost:8000`. |
+| `VITE_FIREBASE_API_KEY` | Frontend Firebase project API key. | Set during frontend build. |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Frontend Firebase auth domain. | Set during frontend build. |
+| `VITE_FIREBASE_PROJECT_ID` | Frontend Firebase project ID. | Set during frontend build. |
+| `VITE_FIREBASE_APP_ID` | Frontend Firebase application ID. | Set during frontend build. |
+
+Copy `.env.example` for local configuration and fill values locally; it intentionally contains no configured values. Firebase credentials belong in the deployment secret store, never in source control. `/health` is an unauthenticated process health check.
+
+To create a schema migration after changing the SQLModel models:
+
+```bash
+alembic revision --autogenerate -m "describe the schema change"
+```
+
+Review the generated migration before committing it, then validate it with `alembic upgrade head` against a fresh SQLite file and the deployment database.
+For an existing database created by the pre-Alembic application, back it up and verify its schema first, then run `alembic stamp head` once to mark this baseline; do not run the initial create-schema migration against tables that already exist.
+
+Aggregate operational counts (no personal data) are available with:
+
+```bash
+python scripts/stats.py
+```
+
 ---
 
 ## 5. API Endpoints Overview

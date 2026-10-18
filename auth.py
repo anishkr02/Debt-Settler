@@ -1,4 +1,5 @@
 import logging
+import json
 import os
 import re
 from typing import Optional
@@ -11,30 +12,43 @@ from db_models import User, GroupMember, Group
 logger = logging.getLogger("debt_settle.auth")
 
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
-FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 
-# Firebase Admin SDK initialization if available and needed
-_firebase_initialized = False
-cred_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
+def initialize_firebase(
+    dev_mode: bool,
+    credential_path: str,
+    credential_json: str
+) -> bool:
+    if dev_mode:
+        return False
 
-if cred_path and os.path.exists(cred_path):
     try:
         import firebase_admin
-        from firebase_admin import auth as fb_auth, credentials
-        if not firebase_admin._apps:
-            cred = credentials.Certificate(cred_path)
-            firebase_admin.initialize_app(cred)
-        _firebase_initialized = True
-    except Exception as e:
-        print(f"Warning: Firebase Admin initialization failed: {e}")
-elif not DEV_MODE and FIREBASE_PROJECT_ID:
-    raise FileNotFoundError(
-        f"FIREBASE_SERVICE_ACCOUNT_PATH is not set or the file "
-        f"doesn't exist (got: '{cred_path}'). Download the key "
-        f"from Firebase Console > Project settings > Service "
-        f"accounts > Generate new private key, then point "
-        f"FIREBASE_SERVICE_ACCOUNT_PATH at it in .env"
-    )
+        from firebase_admin import credentials
+
+        if firebase_admin._apps:
+            return True
+        if credential_json:
+            credential = credentials.Certificate(json.loads(credential_json))
+        elif credential_path:
+            credential = credentials.Certificate(credential_path)
+        else:
+            raise ValueError("Firebase service account credentials are not configured")
+
+        firebase_admin.initialize_app(credential)
+        return True
+    except Exception as exc:
+        logger.exception("Firebase Admin initialization failed")
+        raise RuntimeError(
+            "Firebase Admin could not be initialized; configure a valid "
+            "FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON."
+        ) from exc
+
+
+_firebase_initialized = initialize_firebase(
+    DEV_MODE,
+    os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", ""),
+    os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+)
 
 
 def _get_or_create_dev_user(session: Session, dev_identifier: str) -> User:

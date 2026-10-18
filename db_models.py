@@ -4,7 +4,7 @@ Database tables for Debt-Settle (SQLModel = SQLAlchemy + Pydantic in one).
 
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import DateTime, UniqueConstraint
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -14,9 +14,9 @@ class User(SQLModel, table=True):
     email: str = Field(index=True)
     username: str = Field(unique=True, index=True)
     username_confirmed: bool = Field(default=False)
-    consented_at: Optional[datetime] = Field(default=None)
+    consented_at: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
     consent_version: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     memberships: List["GroupMember"] = Relationship(back_populates="user")
 
@@ -24,8 +24,8 @@ class User(SQLModel, table=True):
 class Group(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    fully_settled_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
+    fully_settled_at: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
 
     members: List["GroupMember"] = Relationship(back_populates="group")
     expenses: List["ExpenseDB"] = Relationship(back_populates="group")
@@ -59,7 +59,7 @@ class Invite(SQLModel, table=True):
     invited_email: Optional[str] = Field(default=None, index=True)
     join_token: Optional[str] = Field(default=None, unique=True, index=True)
     status: str = Field(default="pending", description="pending | accepted")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     group: Optional[Group] = Relationship(back_populates="invites")
 
@@ -70,7 +70,7 @@ class ExpenseDB(SQLModel, table=True):
     description: str
     total_amount: float
     split_type: str = Field(default="equal", description="equal | exact | percentage | shares")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     group: Optional[Group] = Relationship(back_populates="expenses")
     payers: List["ExpensePayerDB"] = Relationship(back_populates="expense")
@@ -102,7 +102,7 @@ class PersonalDebtDB(SQLModel, table=True):
     to_member_id: int = Field(foreign_key="groupmember.id", index=True)
     amount: float
     note: str = ""
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     group: Optional[Group] = Relationship(back_populates="debts")
 
@@ -115,9 +115,9 @@ class SettlementTransactionDB(SQLModel, table=True):
     amount: float
     status: str = Field(default="pending", description="pending | paid_pending_confirmation | confirmed")
     algorithm_used: str = Field(default="exact", description="exact | greedy")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    paid_at: Optional[datetime] = Field(default=None)
-    confirmed_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
+    paid_at: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
+    confirmed_at: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
 
     group: Optional[Group] = Relationship(back_populates="settlements")
 
@@ -127,6 +127,6 @@ class ChatMessageDB(SQLModel, table=True):
     group_id: int = Field(foreign_key="group.id", index=True)
     sender_member_id: int = Field(foreign_key="groupmember.id", index=True)
     body: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     group: Optional[Group] = Relationship(back_populates="messages")

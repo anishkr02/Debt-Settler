@@ -8,20 +8,20 @@ from sqlmodel import Session, select, create_engine, SQLModel
 from sqlmodel.pool import StaticPool
 
 from main import app
-from db import get_session
+from db import get_session, normalize_database_url, sqlalchemy_database_url
 from db_models import (
     User, Group, GroupMember, Invite, ExpenseDB, ExpensePayerDB,
     ExpenseSplitDB, PersonalDebtDB, SettlementTransactionDB, ChatMessageDB
 )
 from retention import cleanup_expired_groups
 
-# Use StaticPool so sqlite:///:memory: is shared across all session instances in the test process
-TEST_DATABASE_URL = "sqlite:///:memory:"
-test_engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool
-)
+TEST_DATABASE_URL = normalize_database_url(os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:"))
+test_engine_kwargs = {}
+if TEST_DATABASE_URL.startswith("sqlite"):
+    test_engine_kwargs["connect_args"] = {"check_same_thread": False}
+    if TEST_DATABASE_URL.endswith(":memory:"):
+        test_engine_kwargs["poolclass"] = StaticPool
+test_engine = create_engine(sqlalchemy_database_url(TEST_DATABASE_URL), **test_engine_kwargs)
 
 
 def override_get_session():
@@ -34,6 +34,7 @@ app.dependency_overrides[get_session] = override_get_session
 
 @pytest.fixture(autouse=True)
 def setup_database():
+    SQLModel.metadata.drop_all(test_engine)
     SQLModel.metadata.create_all(test_engine)
     yield
     SQLModel.metadata.drop_all(test_engine)
@@ -59,6 +60,12 @@ def test_user_signup_and_me():
     assert me_res.json()["username"] == "alice"
     assert me_res.json()["consented_at"] is None
     assert me_res.json()["consent_version"] is None
+
+
+def test_health_endpoint_is_public():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
 
 
 def test_consent_records_version_and_timestamp():
@@ -617,6 +624,23 @@ def test_group_chat_and_retention():
         assert session.get(Group, g_id) is None
         # Verify messages are cleaned up
         assert len(session.exec(select(ChatMessageDB).where(ChatMessageDB.group_id == g_id)).all()) == 0
+
+
+def test_retention_deletes_group_settled_eight_days_ago():
+    with Session(test_engine) as session:
+        group = Group(
+            name="Eight Day Old Group",
+            fully_settled_at=datetime.now(timezone.utc) - timedelta(days=8)
+        )
+        session.add(group)
+        session.commit()
+        session.refresh(group)
+        group_id = group.id
+
+        deleted = cleanup_expired_groups(session, retention_days=7)
+
+        assert group_id in deleted
+        assert session.get(Group, group_id) is None
 
 
 def test_user_search_no_email_leaked():

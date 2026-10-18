@@ -18,14 +18,19 @@ def cleanup_expired_groups(session: Session, retention_days: int = 7) -> List[in
     Returns the list of deleted group IDs.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
-    
-    expired_groups = session.exec(
-        select(Group).where(
-            Group.fully_settled_at != None,
-            Group.fully_settled_at <= cutoff
-        )
+    settled_groups = session.exec(
+        select(Group).where(Group.fully_settled_at.is_not(None))
     ).all()
-    
+    expired_groups = []
+    for group in settled_groups:
+        settled_at = group.fully_settled_at
+        if settled_at.tzinfo is None:
+            settled_at = settled_at.replace(tzinfo=timezone.utc)
+        else:
+            settled_at = settled_at.astimezone(timezone.utc)
+        if settled_at <= cutoff:
+            expired_groups.append(group)
+
     deleted_ids = []
     
     for group in expired_groups:

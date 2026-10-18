@@ -53,6 +53,28 @@ RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 limiter = Limiter(key_func=get_remote_address, enabled=RATE_LIMIT_ENABLED)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+CORS_DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def parse_cors_allowed_origins(value: str) -> List[str]:
+    origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+    return origins or CORS_DEFAULT_ORIGINS.copy()
+
+
+CORS_ALLOWED_ORIGINS = parse_cors_allowed_origins(os.getenv("CORS_ALLOWED_ORIGINS", ""))
+
+
+def configure_sentry(dsn: str) -> None:
+    if dsn:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=dsn,
+            send_default_pii=False,
+            max_request_body_size="never",
+        )
+
+
+configure_sentry(os.getenv("SENTRY_DSN", ""))
 
 
 # Anything unexpected becomes a generic 500. The real error goes to the server
@@ -80,7 +102,7 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,6 +112,11 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 # -------------------------------------------------------------
