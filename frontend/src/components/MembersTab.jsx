@@ -75,9 +75,10 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="content-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Group Members</h2>
+          <p className="eyebrow mb-1">DEBT-SETTLE</p>
+          <h2 className="text-lg font-bold text-ink-900">Group Members</h2>
           <p className="text-xs text-slate-500 font-medium">Manage members, UPI payment handles, and group invites.</p>
         </div>
 
@@ -86,7 +87,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
             setShowInviteModal(true);
             setSuccessMsg('');
           }}
-          className="flex items-center gap-1.5 px-4 py-2 bg-olive-primary hover:bg-olive-700 text-white font-bold text-xs rounded-xl shadow-sm transition active:scale-[0.99]"
+          className="primary-btn"
         >
           <UserPlus className="w-4 h-4" />
           <span>Invite Member</span>
@@ -110,14 +111,14 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
       )}
 
       {/* Members Roster */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
+      <div className="overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-soft divide-y divide-slate-100">
         {group.members.map((m) => {
           const isSelf = currentUser && (m.name === currentUser.username || m.user_id === currentUser.id);
 
           return (
-            <div key={m.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/50 transition">
+            <div key={m.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-cream-50/50 transition">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-olive-100 text-olive-primary flex items-center justify-center font-bold text-sm">
+                <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center font-bold text-sm">
                   {m.name[0].toUpperCase()}
                 </div>
                 <div>
@@ -148,13 +149,13 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                         value={upiInput}
                         onChange={(e) => setUpiInput(e.target.value)}
                         disabled={upiSaving}
-                        className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-olive-primary w-44"
+                        className="min-h-[44px] w-44 px-3 text-xs"
                       />
                       <button
                         type="button"
                         onClick={handleSaveUpi}
                         disabled={upiSaving}
-                        className="px-2.5 py-1 bg-olive-primary text-white text-xs font-bold rounded-lg hover:bg-olive-700 transition disabled:opacity-50"
+                        className="min-h-[44px] rounded-xl bg-brand-600 px-3 text-xs font-bold text-white transition hover:bg-brand-700 disabled:opacity-50"
                         title="Save UPI"
                       >
                         {upiSaving ? 'Saving...' : 'Save'}
@@ -166,7 +167,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                           setUpiError('');
                         }}
                         disabled={upiSaving}
-                        className="p-1 border border-slate-200 text-slate-400 hover:text-slate-600 rounded-lg"
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:text-slate-600"
                         title="Cancel"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -182,9 +183,9 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                 ) : (
                   <div className="flex items-center sm:justify-end gap-2">
                     {m.upi_id ? (
-                      <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700">
+                      <div className="inline-flex items-center gap-1.5 bg-cream-50 border border-slate-200 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700">
                         <span className="text-[10px] uppercase font-bold text-slate-400">UPI:</span>
-                        <span className="text-olive-800">{m.upi_id}</span>
+                        <span className="text-brand-800">{m.upi_id}</span>
                       </div>
                     ) : (
                       <span className="text-xs text-slate-400 italic">No UPI handle set</span>
@@ -195,7 +196,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                       <button
                         type="button"
                         onClick={() => handleStartEditUpi(m.upi_id)}
-                        className="p-1.5 text-slate-400 hover:text-olive-700 hover:bg-olive-50 rounded-lg transition border border-transparent hover:border-olive-200"
+                        className="p-1.5 text-slate-400 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition border border-transparent hover:border-brand-200"
                         title={m.upi_id ? 'Edit your UPI ID' : 'Add your UPI ID'}
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -212,13 +213,13 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
       {/* Invite Member Modal */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-cream-100 rounded-2xl shadow-2xl border border-slate-100 max-w-md w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+          <div className="panel-card max-w-md w-full p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900">Add members</h3>
               <button
                 type="button"
                 onClick={() => setShowInviteModal(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800"
                 title="Close"
               >
                 <X className="w-4 h-4" />
@@ -236,7 +237,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
             <button
               type="button"
               onClick={() => setShowInviteModal(false)}
-              className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold transition"
+              className="primary-btn w-full bg-ink-900 hover:bg-ink-700"
             >
               Done
             </button>

@@ -124,19 +124,20 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
   };
 
   return (
-    <div className="min-h-screen bg-cream-100 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8">
+    <div className="screen-shell flex flex-col items-center justify-center">
       {/* Brand Header */}
       <div className="max-w-md w-full text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-olive-primary text-white shadow-lg shadow-olive-primary/20 mb-4">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-ink-900 text-white shadow-soft mb-4">
           <Wallet className="w-8 h-8" />
         </div>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Debt-Settle</h1>
+        <p className="eyebrow mb-2">DEBT-SETTLE</p>
+        <h1 className="text-3xl font-black text-slate-900 tracking-tight">Sign in</h1>
         <p className="mt-2 text-sm text-slate-600 font-medium">
           Group expense splitting with minimum-transaction settlement & UPI links.
         </p>
       </div>
 
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-100 p-8 space-y-6">
+      <div className="panel-card max-w-md w-full p-5 sm:p-8 space-y-6">
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
             {error}
@@ -144,21 +145,21 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
         )}
 
         {/* Required Consent Checkbox */}
-        <div className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700">
+        <div className="flex items-start gap-2.5 rounded-xl border border-slate-200/80 bg-cream-50 p-3 text-xs text-slate-700">
           <input
             id="auth-privacy-consent"
             type="checkbox"
             required
             checked={agreedToPrivacy}
             onChange={(e) => setAgreedToPrivacy(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-olive-600 focus:ring-olive-500 cursor-pointer"
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
           />
           <label htmlFor="auth-privacy-consent" className="cursor-pointer leading-relaxed">
             I agree to the{' '}
             <a
               href="/privacy"
               onClick={onViewPrivacy}
-              className="text-olive-700 font-bold hover:underline"
+              className="text-brand-700 font-bold hover:underline"
             >
               Privacy Policy
             </a>
@@ -172,7 +173,7 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
             type="button"
             onClick={handleGoogleSignIn}
             disabled={loading || !agreedToPrivacy}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-200 rounded-xl shadow-sm bg-white hover:bg-slate-50 text-slate-700 font-medium transition active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
+            className="secondary-btn w-full"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -205,12 +206,12 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
               <div className="flex-grow border-t border-slate-200"></div>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3">
+            <div className="rounded-xl border border-slate-200/80 bg-cream-50 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-olive-600" /> Dev User Switcher
+                  <Sparkles className="w-3.5 h-3.5 text-brand-600" /> Dev User Switcher
                 </span>
-                <span className="text-[11px] bg-olive-100 text-olive-800 font-semibold px-2 py-0.5 rounded-full">
+                <span className="text-[11px] bg-brand-100 text-brand-800 font-semibold px-2 py-0.5 rounded-full">
                   DEV_MODE
                 </span>
               </div>
@@ -222,9 +223,9 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
                     type="button"
                     onClick={() => handleDevLogin(name)}
                     disabled={loading}
-                    className="flex items-center gap-2 p-2.5 bg-white border border-slate-200 hover:border-olive-500 hover:bg-olive-50/50 rounded-lg text-xs font-semibold text-slate-700 capitalize transition"
+                    className="flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-700 capitalize transition hover:border-brand-500 hover:bg-brand-50/50"
                   >
-                    <div className="w-6 h-6 rounded-full bg-olive-primary text-white flex items-center justify-center font-bold text-[10px]">
+                    <div className="w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-[10px]">
                       {name[0].toUpperCase()}
                     </div>
                     <span>@{name}</span>
@@ -238,13 +239,13 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
                   placeholder="Custom username..."
                   value={customDevName}
                   onChange={(e) => setCustomDevName(e.target.value)}
-                  className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-olive-primary"
+                  className="input-field min-w-0 flex-1 px-3 text-xs"
                 />
                 <button
                   type="button"
                   onClick={() => customDevName.trim() && handleDevLogin(customDevName)}
                   disabled={loading || !customDevName.trim()}
-                  className="px-3 py-1.5 bg-olive-primary text-white text-xs font-semibold rounded-lg hover:bg-olive-700 disabled:opacity-50"
+                  className="min-h-[44px] rounded-xl bg-brand-600 px-3 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                 >
                   Login
                 </button>
@@ -258,7 +259,7 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
                   <button
                     type="button"
                     onClick={() => setIsSignup(true)}
-                    className="text-olive-700 font-bold hover:underline"
+                    className="text-brand-700 font-bold hover:underline"
                   >
                     Create Account
                   </button>
@@ -273,7 +274,7 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
                       placeholder="e.g. karan_k"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-olive-primary"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
                     />
                   </div>
                   <div>
@@ -283,14 +284,14 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
                       placeholder="e.g. karan@gmail.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-olive-primary"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
                     />
                   </div>
                   <div className="flex gap-2 pt-1">
                     <button
                       type="submit"
                       disabled={loading}
-                      className="flex-1 py-2 bg-olive-primary hover:bg-olive-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50"
+                      className="flex-1 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50"
                     >
                       Save Profile
                     </button>

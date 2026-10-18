@@ -7,7 +7,7 @@ import {
 
 const INPUT =
   'w-full px-4 py-3 border border-slate-300 rounded-2xl text-sm bg-white ' +
-  'focus:outline-none focus:ring-2 focus:ring-olive-primary placeholder:text-slate-400';
+  'focus:outline-none focus:ring-2 focus:ring-brand-600 placeholder:text-slate-400';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -58,37 +58,34 @@ export default function InvitePanel({
 
   const normalize = (s) => s.trim().replace(/^@+/, '').toLowerCase();
 
-  // Debounced username search.
   useEffect(() => {
     const raw = query.trim().replace(/^@+/, '');
-    setInputError('');
-    if (raw.length < 2) {
-      setResults([]);
-      setSearchError('');
-      setNoUserFound(false);
-      setSearching(false);
-      return undefined;
-    }
-    setSearching(true);
-    setSearchError('');
-    setNoUserFound(false);
+    if (method !== 'username' || raw.length < 2) return undefined;
+    let active = true;
     const timer = setTimeout(async () => {
       try {
         const data = await api.searchUsers(raw);
-        setResults(data || []);
-        setSearchedName(raw);
-        setNoUserFound(!data || data.length === 0);
+        if (active) {
+          setResults(data || []);
+          setSearchedName(raw);
+          setNoUserFound(!data || data.length === 0);
+          setSearchError('');
+        }
       } catch (err) {
-        setSearchError(err.message || 'Could not search users');
-        setResults([]);
+        if (active) {
+          setSearchError(err.message || 'Could not search users');
+          setResults([]);
+        }
       } finally {
-        setSearching(false);
+        if (active) setSearching(false);
       }
     }, 250);
-    return () => clearTimeout(timer);
-  }, [query]);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [method, query]);
 
-  // Auto-create the join link the first time the Link tab opens.
   const loadLink = async () => {
     setLinkLoading(true);
     setLinkError('');
@@ -100,17 +97,35 @@ export default function InvitePanel({
       setLinkLoading(false);
     }
   };
-  useEffect(() => {
-    if (method === 'join_link' && onRequestLink && !link && !linkLoading && !linkError) {
-      loadLink();
-    }
-  }, [method]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const switchMethod = (id) => {
     setMethod(id);
     setNotice('');
     setInputError('');
     setEmailError('');
+    if (id === 'username' && query.trim().replace(/^@+/, '').length >= 2) {
+      setSearching(true);
+      setSearchError('');
+      setNoUserFound(false);
+    }
+    if (id === 'join_link' && onRequestLink && !link && !linkLoading && !linkError) {
+      loadLink();
+    }
+  };
+
+  const handleUsernameChange = (value) => {
+    setQuery(value);
+    setInputError('');
+    const raw = value.trim().replace(/^@+/, '');
+    if (raw.length < 2) {
+      setResults([]);
+      setSearchError('');
+      setNoUserFound(false);
+      setSearching(false);
+    } else {
+      setSearching(true);
+      setSearchError('');
+      setNoUserFound(false);
+    }
   };
 
   const addUsername = async (rawName) => {
@@ -199,7 +214,7 @@ export default function InvitePanel({
             type="button"
             onClick={() => switchMethod(id)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition
-              ${method === id ? 'bg-olive-primary text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              ${method === id ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <Icon className="w-3.5 h-3.5" /> {label}
           </button>
@@ -221,7 +236,7 @@ export default function InvitePanel({
                 className={INPUT + ' pl-10 pr-4'}
                 placeholder="Type a username (e.g. rahul)…"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => handleUsernameChange(e.target.value)}
                 autoCapitalize="none"
                 autoCorrect="off"
               />
@@ -231,7 +246,7 @@ export default function InvitePanel({
               <button
                 type="submit"
                 disabled={busy || searching}
-                className="px-4 py-3 bg-olive-primary hover:bg-olive-700 text-white text-xs font-bold rounded-2xl transition disabled:opacity-50"
+                className="px-4 py-3 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-2xl transition disabled:opacity-50"
               >
                 Add
               </button>
@@ -264,7 +279,7 @@ export default function InvitePanel({
                 <div
                   key={u.id}
                   onClick={() => addUsername(u.username)}
-                  className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 cursor-pointer transition"
+                  className="flex items-center justify-between px-4 py-2.5 hover:bg-cream-50 cursor-pointer transition"
                 >
                   <span className="text-sm font-semibold text-slate-800">@{u.username}</span>
                   <button
@@ -274,7 +289,7 @@ export default function InvitePanel({
                       addUsername(u.username);
                     }}
                     disabled={busy}
-                    className="px-3 py-1 bg-olive-primary text-white text-xs font-bold rounded-xl transition hover:bg-olive-700 disabled:opacity-50"
+                    className="px-3 py-1 bg-brand-600 text-white text-xs font-bold rounded-xl transition hover:bg-brand-700 disabled:opacity-50"
                   >
                     + Add
                   </button>
@@ -302,7 +317,7 @@ export default function InvitePanel({
             <button
               type="submit"
               disabled={!emailInput.trim() || busy}
-              className="px-5 py-3 bg-olive-primary hover:bg-olive-700 text-white font-bold text-xs rounded-2xl transition disabled:opacity-50"
+              className="px-5 py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-2xl transition disabled:opacity-50"
             >
               Add
             </button>
@@ -316,7 +331,7 @@ export default function InvitePanel({
 
       {method === 'join_link' && (
         <div className="p-4 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
-          <div className="w-10 h-10 rounded-full bg-olive-50 text-olive-primary flex items-center justify-center mx-auto">
+          <div className="w-10 h-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto">
             <Link2 className="w-5 h-5" />
           </div>
 
@@ -344,7 +359,7 @@ export default function InvitePanel({
             </div>
           ) : link ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+              <div className="flex items-center gap-2 p-2 bg-cream-50 border border-slate-200 rounded-xl">
                 <input
                   readOnly
                   value={link}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import {
   ChevronRight, Users, RefreshCw, AlertCircle,
@@ -11,7 +11,7 @@ import { buildJoinUrl, copyText } from '../lib/joinLink';
 // ─── tiny shared input style ─────────────────────────────────────────────────
 const INPUT =
   'w-full px-4 py-3 border border-slate-300 rounded-2xl text-sm bg-white ' +
-  'focus:outline-none focus:ring-2 focus:ring-olive-primary placeholder:text-slate-400';
+  'focus:outline-none focus:ring-2 focus:ring-brand-600 placeholder:text-slate-400';
 
 // ─── Step 1: Group details ────────────────────────────────────────────────────
 function StepGroupDetails({ groupName, setGroupName, adminUpi, setAdminUpi, onNext }) {
@@ -67,7 +67,7 @@ function StepGroupDetails({ groupName, setGroupName, adminUpi, setAdminUpi, onNe
       <button
         type="submit"
         disabled={!groupName.trim()}
-        className="mt-8 w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
+        className="mt-8 w-full py-4 rounded-2xl bg-brand-600 hover:bg-brand-700
                    text-white font-bold text-base transition disabled:opacity-40 active:scale-[0.99]"
       >
         Next →
@@ -135,13 +135,13 @@ function StepInviteMembers({
             {chips.map((chip, idx) => (
               <span
                 key={`${chip.type}-${chip.value}`}
-                className="inline-flex items-center gap-1.5 px-3 py-1 bg-olive-50 border border-olive-200 text-olive-900 rounded-xl text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-50 border border-brand-200 text-brand-900 rounded-xl text-xs font-semibold"
               >
                 <span>{chip.label}</span>
                 <button
                   type="button"
                   onClick={() => removeChip(idx)}
-                  className="text-olive-700 hover:text-red-600 font-bold ml-0.5"
+                  className="text-brand-700 hover:text-red-600 font-bold ml-0.5"
                   title="Remove"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -172,7 +172,7 @@ function StepInviteMembers({
         type="button"
         onClick={onSubmitCreate}
         disabled={submitting}
-        className="mt-6 w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
+        className="mt-6 w-full py-4 rounded-2xl bg-brand-600 hover:bg-brand-700
                    text-white font-bold text-base transition disabled:opacity-50 active:scale-[0.99] shadow-md flex items-center justify-center gap-2"
       >
         {submitting && <RefreshCw className="w-4 h-4 animate-spin" />}
@@ -198,7 +198,7 @@ function StepResultSummary({ summary, onOpenGroup }) {
   return (
     <div className="flex flex-col h-full space-y-5">
       <div>
-        <span className="text-[11px] font-bold text-olive-primary uppercase tracking-wider block mb-1">
+        <span className="text-[11px] font-bold text-brand-600 uppercase tracking-wider block mb-1">
           Group Created Successfully
         </span>
         <h2 className="text-3xl font-black text-slate-900 leading-tight">
@@ -302,7 +302,7 @@ function StepResultSummary({ summary, onOpenGroup }) {
         <button
           type="button"
           onClick={onOpenGroup}
-          className="w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
+          className="w-full py-4 rounded-2xl bg-brand-600 hover:bg-brand-700
                      text-white font-bold text-base transition active:scale-[0.99] shadow-md flex items-center justify-center gap-2"
         >
           <span>Open group →</span>
@@ -380,7 +380,7 @@ function CreateGroupModal({ user, onClose, onCreated }) {
       try {
         const linkRes = await api.inviteMember(newGroup.id, { method: 'join_link' });
         joinLink = buildJoinUrl(linkRes.join_token);
-      } catch (e) {
+      } catch {
         // join link fallback if error
       }
 
@@ -417,7 +417,7 @@ function CreateGroupModal({ user, onClose, onCreated }) {
             </button>
           )}
           {step === 1 && (
-            <span className="text-xs font-bold text-olive-primary uppercase tracking-widest">
+            <span className="text-xs font-bold text-brand-600 uppercase tracking-widest">
               DEBT-SETTLE
             </span>
           )}
@@ -480,19 +480,37 @@ export default function DashboardScreen({ user, onSelectGroup }) {
   const [error, setError]           = useState('');
   const [showCreate, setShowCreate] = useState(false);
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
-      setLoading(true);
-      setError('');
       setGroups(await api.listGroups());
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchGroups(); }, []);
+  useEffect(() => {
+    let active = true;
+    const loadGroups = async () => {
+      try {
+        const groupsData = await api.listGroups();
+        if (active) {
+          setGroups(groupsData);
+          setError('');
+        }
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadGroups();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleCreated = async (id) => {
     setShowCreate(false);
@@ -503,31 +521,31 @@ export default function DashboardScreen({ user, onSelectGroup }) {
   return (
     <div className="min-h-screen bg-cream-100 flex flex-col">
       {/* Header */}
-      <div className="px-5 pt-10 pb-4">
-        <p className="text-xs font-bold text-olive-primary uppercase tracking-widest mb-1">
+      <section className="hero-card mx-1 mt-3 mb-6">
+        <p className="eyebrow mb-2 text-brand-300">
           DEBT-SETTLE
         </p>
-        <h1 className="text-4xl font-black text-slate-900 leading-tight">Your groups</h1>
-        <p className="text-sm text-slate-500 mt-1">Keep shared money simple.</p>
-      </div>
+        <h1 className="text-3xl font-black leading-tight text-white sm:text-4xl">Your groups</h1>
+        <p className="mt-2 text-sm text-slate-300">Keep shared money simple.</p>
+      </section>
 
       {error && (
-        <div className="mx-5 mb-3 flex items-center gap-2 text-xs text-red-700
+        <div className="mx-1 mb-3 flex items-center gap-2 text-xs text-red-700
                         bg-red-50 border border-red-200 rounded-xl px-3 py-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
         </div>
       )}
 
       {/* Group list */}
-      <div className="flex-1 px-5">
+      <div className="flex-1 px-1">
         {loading && groups.length === 0 ? (
           <div className="flex items-center justify-center py-20">
-            <RefreshCw className="w-6 h-6 animate-spin text-olive-primary" />
+            <RefreshCw className="w-6 h-6 animate-spin text-brand-600" />
           </div>
         ) : groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center space-y-3">
-            <div className="w-16 h-16 rounded-2xl bg-olive-100 flex items-center justify-center">
-              <Users className="w-8 h-8 text-olive-primary" />
+            <div className="w-16 h-16 rounded-2xl bg-brand-100 flex items-center justify-center">
+              <Users className="w-8 h-8 text-brand-600" />
             </div>
             <p className="font-bold text-slate-700 text-lg">No groups yet</p>
             <p className="text-sm text-slate-500 max-w-xs">
@@ -541,11 +559,11 @@ export default function DashboardScreen({ user, onSelectGroup }) {
                 key={g.id}
                 onClick={() => onSelectGroup(g.id)}
                 className="w-full flex items-center gap-4 bg-white rounded-2xl px-4 py-3.5
-                           border border-slate-200 hover:border-olive-400 hover:shadow-sm
+                           border border-slate-200 hover:border-brand-400 hover:shadow-sm
                            transition active:scale-[0.99] text-left"
               >
                 {/* Avatar */}
-                <div className="w-11 h-11 rounded-xl bg-olive-primary text-white flex items-center
+                <div className="w-11 h-11 rounded-xl bg-brand-600 text-white flex items-center
                                 justify-center font-black text-lg flex-shrink-0">
                   {g.name[0].toUpperCase()}
                 </div>
@@ -568,7 +586,7 @@ export default function DashboardScreen({ user, onSelectGroup }) {
                     </span>
                   )}
                   {!g.fully_settled_at && g.is_frozen && (
-                    <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold bg-brand-100 text-brand-800 px-2 py-0.5 rounded-full">
                       Frozen
                     </span>
                   )}
@@ -581,13 +599,12 @@ export default function DashboardScreen({ user, onSelectGroup }) {
       </div>
 
       {/* Pinned CTA */}
-      <div className="fixed bottom-0 left-0 right-0 px-5 pb-6 pt-3
-                      bg-gradient-to-t from-cream-100 via-cream-100/90 to-transparent">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200/80 bg-cream-100 px-5 pb-5 pt-3">
         <button
           onClick={() => setShowCreate(true)}
           className="w-full max-w-md mx-auto flex items-center justify-center gap-2
-                     py-4 rounded-2xl bg-olive-primary hover:bg-olive-700
-                     text-white font-bold text-base shadow-lg transition active:scale-[0.99]"
+                     min-h-[52px] py-4 rounded-2xl bg-brand-600 hover:bg-brand-700
+                     text-white font-bold text-base shadow-soft transition active:scale-[0.99]"
         >
           <Plus className="w-5 h-5" />
           Create a new group

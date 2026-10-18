@@ -22,12 +22,13 @@ export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy 
   };
 
   return (
-    <div className="min-h-screen bg-cream-100 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-100 p-8 space-y-6">
+    <div className="screen-shell flex flex-col justify-center items-center font-sans">
+      <div className="panel-card max-w-md w-full p-6 sm:p-8 space-y-6">
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-olive-100 text-olive-800 shadow-sm mb-2">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-100 text-brand-800 shadow-sm mb-2">
             <ShieldCheck className="w-7 h-7" />
           </div>
+          <p className="eyebrow">DEBT-SETTLE</p>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Privacy Consent</h1>
           <p className="text-xs text-slate-500 font-medium">
             Please review and accept our privacy practices to continue to Debt-Settle.
@@ -41,7 +42,7 @@ export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy 
           </div>
         )}
 
-        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-3 text-slate-600">
+        <div className="bg-cream-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-3 text-slate-600">
           <p className="font-semibold text-slate-800">In summary:</p>
           <ul className="list-disc pl-4 space-y-1.5 text-slate-600">
             <li>We store your email, username, group expenses, debts, and chat messages.</li>
@@ -54,7 +55,7 @@ export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy 
             <button
               type="button"
               onClick={onViewPrivacy}
-              className="text-olive-700 hover:text-olive-800 font-bold inline-flex items-center gap-1 hover:underline"
+              className="min-h-[44px] text-brand-700 hover:text-brand-800 font-bold inline-flex items-center gap-1 hover:underline"
             >
               <span>Read the full Privacy Policy</span>
               <ExternalLink className="w-3.5 h-3.5" />
@@ -67,7 +68,7 @@ export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy 
             type="button"
             onClick={handleAgree}
             disabled={loading}
-            className="w-full py-3 bg-olive-primary hover:bg-olive-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-olive-primary/20 transition flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99]"
+            className="primary-btn w-full"
           >
             <span>{loading ? 'Recording Consent...' : 'I Agree & Continue'}</span>
             <ArrowRight className="w-4 h-4" />
@@ -76,7 +77,7 @@ export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy 
           <button
             type="button"
             onClick={onLogout}
-            className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-2"
+            className="secondary-btn w-full text-xs"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sign Out</span>

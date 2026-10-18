@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { Send, Lock, MessageSquare, RefreshCw, AlertCircle } from 'lucide-react';
 
@@ -11,23 +11,42 @@ export default function ChatTab({ group, currentUser }) {
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
 
-  const fetchChat = async () => {
+  const fetchChat = useCallback(async () => {
     try {
       const data = await api.listMessages(group.id);
       setMessages(data.messages || []);
       setIsReadOnly(!!data.is_read_only);
+      setError('');
     } catch (err) {
-      // silent polling error
+      setError(err.message || 'Could not load group messages');
     } finally {
       setLoading(false);
     }
-  };
+  }, [group.id]);
 
   useEffect(() => {
-    fetchChat();
+    let active = true;
+    const loadChat = async () => {
+      try {
+        const data = await api.listMessages(group.id);
+        if (active) {
+          setMessages(data.messages || []);
+          setIsReadOnly(!!data.is_read_only);
+          setError('');
+        }
+      } catch (err) {
+        if (active) setError(err.message || 'Could not load group messages');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadChat();
     // 3-second polling for active group chat
-    const interval = setInterval(fetchChat, 3000);
-    return () => clearInterval(interval);
+    const interval = setInterval(loadChat, 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [group.id]);
 
   useEffect(() => {
@@ -54,15 +73,16 @@ export default function ChatTab({ group, currentUser }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[600px] overflow-hidden">
+    <div className="flex h-[min(600px,72vh)] min-h-[420px] flex-col overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-soft">
       {/* Chat Header */}
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+      <div className="flex items-center justify-between border-b border-slate-100 bg-cream-50 p-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-olive-100 text-olive-800 flex items-center justify-center font-bold">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-brand-800 font-bold">
             <MessageSquare className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-slate-900">Group Coordination Chat</h3>
+            <p className="eyebrow mb-1">DEBT-SETTLE</p>
+            <h3 className="font-bold text-sm text-ink-900">Group Coordination Chat</h3>
             <span className="text-[11px] text-slate-400 font-medium">
               Visible to all {group.members.length} members
             </span>
@@ -88,10 +108,10 @@ export default function ChatTab({ group, currentUser }) {
       )}
 
       {/* Message Stream */}
-      <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/30">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-cream-50/60 p-4 space-y-3">
         {loading && messages.length === 0 ? (
           <div className="py-12 text-center text-slate-400">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-olive-600" />
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-600" />
             <span className="text-xs font-semibold">Loading messages...</span>
           </div>
         ) : messages.length === 0 ? (
@@ -113,7 +133,7 @@ export default function ChatTab({ group, currentUser }) {
                 <div
                   className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-xs font-medium shadow-sm ${
                     isMe
-                      ? 'bg-olive-primary text-white rounded-tr-none'
+                      ? 'bg-brand-600 text-white rounded-tr-none'
                       : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
                   }`}
                 >
@@ -126,9 +146,9 @@ export default function ChatTab({ group, currentUser }) {
       </div>
 
       {/* Input or Closed Notice */}
-      <div className="p-3 border-t border-slate-100 bg-white">
+      <div className="border-t border-slate-100 bg-white p-3">
         {isReadOnly ? (
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-1.5">
+          <div className="p-3 bg-cream-50 rounded-xl border border-slate-200 text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-1.5">
             <Lock className="w-3.5 h-3.5 text-slate-400" />
             <span>Chat is closed. All debts are settled and group is read-only.</span>
           </div>
@@ -140,12 +160,12 @@ export default function ChatTab({ group, currentUser }) {
               value={newMsg}
               onChange={(e) => setNewMsg(e.target.value)}
               disabled={sending}
-              className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-olive-primary"
+              className="min-h-[44px] min-w-0 flex-1 px-3.5 text-sm"
             />
             <button
               type="submit"
               disabled={sending || !newMsg.trim()}
-              className="px-4 py-2.5 bg-olive-primary hover:bg-olive-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition disabled:opacity-50"
+              className="primary-btn shrink-0 px-4 text-xs"
             >
               <Send className="w-3.5 h-3.5" />
               <span>Send</span>

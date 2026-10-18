@@ -16,14 +16,14 @@ export default function PrivacyScreen({ onBack }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-2xl mx-auto space-y-8">
+    <div className="screen-shell py-6 sm:py-10 font-sans">
+      <div className="max-w-2xl mx-auto space-y-6 sm:space-y-8">
         {/* Navigation / Header */}
         <div className="flex items-center justify-between">
           <button
             type="button"
             onClick={handleBack}
-            className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3.5 py-2 rounded-xl shadow-xs transition"
+            className="secondary-btn"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back</span>
@@ -33,13 +33,16 @@ export default function PrivacyScreen({ onBack }) {
           </span>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 sm:p-8 space-y-6">
+        <div className="panel-card p-5 sm:p-8 space-y-6">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-5">
-            <div className="w-11 h-11 rounded-2xl bg-olive-100 text-olive-800 flex items-center justify-center">
+            <div className="w-11 h-11 rounded-2xl bg-brand-100 text-brand-800 flex items-center justify-center">
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Privacy Policy</h1>
+              <div>
+                <p className="eyebrow mb-1">DEBT-SETTLE</p>
+                <h1 className="text-xl sm:text-2xl font-black text-ink-900 tracking-tight">Privacy Policy</h1>
+              </div>
               <p className="text-xs text-slate-500 font-medium">Clear, plain-language privacy information for Debt-Settle.</p>
             </div>
           </div>
@@ -47,7 +50,7 @@ export default function PrivacyScreen({ onBack }) {
           {/* Section 1: What is stored */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-              <Database className="w-4 h-4 text-olive-600" />
+              <Database className="w-4 h-4 text-brand-600" />
               <h2>What data is collected and stored</h2>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
@@ -65,7 +68,7 @@ export default function PrivacyScreen({ onBack }) {
           {/* Section 2: UPI ID visibility */}
           <div className="space-y-3 border-t border-slate-100 pt-5">
             <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-              <Eye className="w-4 h-4 text-olive-600" />
+              <Eye className="w-4 h-4 text-brand-600" />
               <h2>UPI ID visibility and purpose</h2>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
@@ -77,7 +80,7 @@ export default function PrivacyScreen({ onBack }) {
           {/* Section 3: Data retention */}
           <div className="space-y-3 border-t border-slate-100 pt-5">
             <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-              <Clock className="w-4 h-4 text-olive-600" />
+              <Clock className="w-4 h-4 text-brand-600" />
               <h2>Automatic deletion of settled groups (7 days)</h2>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
@@ -102,14 +105,14 @@ export default function PrivacyScreen({ onBack }) {
           {/* Section 5: Contact */}
           <div className="space-y-3 border-t border-slate-100 pt-5">
             <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-              <Mail className="w-4 h-4 text-olive-600" />
+              <Mail className="w-4 h-4 text-brand-600" />
               <h2>Contact us</h2>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
               {contactEmail ? (
                 <>
                   If you have any questions or privacy concerns regarding Debt-Settle, reach out to us at:{' '}
-                  <a href={`mailto:${contactEmail}`} className="font-bold text-olive-700 hover:underline">
+                  <a href={`mailto:${contactEmail}`} className="font-bold text-brand-700 hover:underline">
                     {contactEmail}
                   </a>
                 </>

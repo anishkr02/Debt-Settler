@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { 
   Zap, CheckCircle2, Clock, ArrowRight, ExternalLink, 
@@ -12,38 +12,62 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(null); // tx_id or 'cancel' or 'generate'
   const [qrModalTx, setQrModalTx] = useState(null);
-  const [qrDataUrl, setQrDataUrl] = useState('');
-  const [qrLoading, setQrLoading] = useState(false);
+  const [qrResult, setQrResult] = useState(null);
   const [copiedUpiTxId, setCopiedUpiTxId] = useState(null);
 
-  const fetchSettlements = async () => {
+  const fetchSettlements = useCallback(async () => {
     try {
-      setLoading(true);
-      setError('');
       const res = await api.getSettlements(group.id);
       setData(res);
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [group.id]);
 
   useEffect(() => {
-    fetchSettlements();
+    let active = true;
+    const loadSettlements = async () => {
+      try {
+        const res = await api.getSettlements(group.id);
+        if (active) {
+          setData(res);
+          setError('');
+        }
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadSettlements();
+    return () => {
+      active = false;
+    };
   }, [group.id]);
 
   useEffect(() => {
     if (qrModalTx && qrModalTx.upi_link) {
-      setQrLoading(true);
+      let active = true;
       QRCode.toDataURL(qrModalTx.upi_link, { width: 220, margin: 1 })
-        .then((url) => setQrDataUrl(url))
-        .catch((err) => console.error('Failed to generate QR code', err))
-        .finally(() => setQrLoading(false));
-    } else {
-      setQrDataUrl('');
+        .then((url) => {
+          if (active) setQrResult({ txId: qrModalTx.id, dataUrl: url });
+        })
+        .catch((err) => {
+          console.error('Failed to generate QR code', err);
+          if (active) setQrResult({ txId: qrModalTx.id, error: true });
+        })
+      return () => {
+        active = false;
+      };
     }
+    return undefined;
   }, [qrModalTx]);
+
+  const qrDataUrl = qrResult?.txId === qrModalTx?.id ? qrResult.dataUrl : '';
+  const qrLoading = Boolean(qrModalTx && qrResult?.txId !== qrModalTx.id);
 
   const handleGenerateSettlement = async () => {
     try {
@@ -133,20 +157,21 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-xl w-full p-6 sm:p-7 space-y-5 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+      <div className="panel-card w-full max-w-xl space-y-5 overflow-y-auto p-5 sm:p-7 max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
         
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-olive-primary text-white flex items-center justify-center shadow-md">
+            <div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-md">
               <Zap className="w-5 h-5 fill-current" />
             </div>
             <div>
+              <p className="eyebrow mb-1">DEBT-SETTLE</p>
               <h3 className="text-lg font-bold text-slate-900">Settlement Dashboard</h3>
               <p className="text-xs text-slate-500 font-medium">Optimal payments & UPI verification</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 font-bold text-xl p-1">✕</button>
+          <button onClick={onClose} className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-slate-400 hover:bg-cream-100 hover:text-slate-700 font-bold text-xl">✕</button>
         </div>
 
         {error && (
@@ -158,12 +183,12 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
 
         {loading ? (
           <div className="py-12 text-center text-slate-400">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-olive-600" />
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-brand-600" />
             <span className="text-xs font-semibold">Loading settlement plan...</span>
           </div>
         ) : !hasSettlements ? (
           <div className="py-8 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-olive-50 text-olive-primary flex items-center justify-center mx-auto">
+            <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto">
               <Zap className="w-7 h-7" />
             </div>
             <div>
@@ -177,12 +202,12 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
               <button
                 onClick={handleGenerateSettlement}
                 disabled={actionLoading === 'generate'}
-                className="px-6 py-3 bg-olive-primary hover:bg-olive-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-olive-primary/20 transition active:scale-[0.98]"
+                className="px-6 py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-brand-600/20 transition active:scale-[0.98]"
               >
                 {actionLoading === 'generate' ? 'Computing Solver...' : 'Generate Settlement Plan ⚡'}
               </button>
             ) : (
-              <div className="p-3 bg-slate-50 border border-slate-200 text-slate-600 text-xs rounded-xl inline-flex items-center gap-1.5 font-medium">
+              <div className="p-3 bg-cream-50 border border-slate-200 text-slate-600 text-xs rounded-xl inline-flex items-center gap-1.5 font-medium">
                 <ShieldAlert className="w-4 h-4 text-amber-500" />
                 <span>Only the group admin can trigger the settlement algorithm.</span>
               </div>
@@ -191,11 +216,11 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
         ) : (
           <div className="space-y-4">
             {/* Algorithm Info Banner */}
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-cream-50 p-3 text-xs">
               <div>
                 <span className="font-bold text-slate-800">
                   Algorithm:{' '}
-                  <span className="capitalize text-olive-800">
+                  <span className="capitalize text-brand-800">
                     {data.settlements[0]?.algorithm_used || 'Hybrid'} Solver
                   </span>
                 </span>
@@ -220,16 +245,16 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                 return (
                   <div
                     key={tx.id}
-                    className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3"
+                    className="content-card space-y-3"
                   >
                     {/* Direction & Amount */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                        <span className={isPayer ? 'text-olive-700 underline font-extrabold' : ''}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2 text-sm font-bold text-slate-900">
+                        <span className={isPayer ? 'text-brand-700 underline font-extrabold' : ''}>
                           @{tx.from_name} {isPayer && <span className="text-[10px] font-normal text-slate-400">(you)</span>}
                         </span>
                         <ArrowRight className="w-4 h-4 text-slate-400" />
-                        <span className={isReceiver ? 'text-olive-700 underline font-extrabold' : ''}>
+                        <span className={isReceiver ? 'text-brand-700 underline font-extrabold' : ''}>
                           @{tx.to_name} {isReceiver && <span className="text-[10px] font-normal text-slate-400">(you)</span>}
                         </span>
                       </div>
@@ -238,15 +263,15 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
 
                     {/* Payee UPI Information / Missing Notice */}
                     {hasToUpi ? (
-                      <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-cream-50 p-2.5 text-xs">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pay to UPI:</span>
-                          <span className="font-mono font-bold text-olive-800">{tx.to_upi_id}</span>
+                          <span className="font-mono font-bold text-brand-800">{tx.to_upi_id}</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => handleCopyUpi(tx.id, tx.to_upi_id)}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:text-slate-900 text-[11px] font-semibold transition active:scale-95"
+                          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 transition hover:text-slate-900 active:scale-95"
                           title="Copy UPI ID"
                         >
                           {copiedUpiTxId === tx.id ? (
@@ -289,7 +314,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                         <button
                           type="button"
                           onClick={() => setQrModalTx(tx)}
-                          className="text-[11px] font-bold text-olive-700 hover:underline flex items-center gap-1"
+                          className="min-h-[44px] text-[11px] font-bold text-brand-700 hover:underline flex items-center gap-1"
                         >
                           <QrCode className="w-3.5 h-3.5" />
                           <span>QR Code</span>
@@ -303,7 +328,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                       {isPayer && tx.upi_link && tx.status !== 'confirmed' && (
                         <a
                           href={tx.upi_link}
-                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl flex items-center gap-1.5 transition active:scale-[0.98]"
+                          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-ink-900 px-3 text-white font-bold transition hover:bg-ink-700 active:scale-[0.98]"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                           <span>Pay via UPI App</span>
@@ -316,7 +341,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                           type="button"
                           onClick={() => handleMarkPaid(tx.id)}
                           disabled={actionLoading === tx.id}
-                          className="px-3.5 py-1.5 bg-olive-primary hover:bg-olive-700 text-white font-bold rounded-xl shadow-xs transition disabled:opacity-50"
+                          className="min-h-[44px] rounded-xl bg-brand-600 px-3.5 text-white font-bold shadow-xs transition hover:bg-brand-700 disabled:opacity-50"
                         >
                           {actionLoading === tx.id ? 'Marking...' : 'Mark as Paid'}
                         </button>
@@ -329,7 +354,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                             type="button"
                             onClick={() => handleDeny(tx.id)}
                             disabled={actionLoading === tx.id}
-                            className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 font-bold rounded-xl transition"
+                            className="min-h-[44px] rounded-xl border border-red-200 px-3 text-red-600 font-bold transition hover:bg-red-50"
                           >
                             Deny
                           </button>
@@ -337,7 +362,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                             type="button"
                             onClick={() => handleConfirm(tx.id)}
                             disabled={actionLoading === tx.id}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition"
+                            className="min-h-[44px] rounded-xl bg-brand-600 px-3.5 text-white font-bold shadow-xs transition hover:bg-brand-700"
                           >
                             Confirm Received
                           </button>
@@ -376,12 +401,13 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
         {/* Browser-Generated QR Code Modal Overlay (no external network call) */}
         {qrModalTx && (
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 max-w-xs w-full text-center space-y-4 shadow-2xl animate-in zoom-in-95 duration-150">
-              <h4 className="font-bold text-slate-900 text-sm">Scan to Pay via UPI</h4>
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 inline-block">
+            <div className="panel-card max-w-xs w-full p-6 text-center space-y-4 animate-in zoom-in-95 duration-150">
+              <p className="eyebrow">DEBT-SETTLE</p>
+              <h4 className="font-black text-ink-900 text-sm">Scan to Pay via UPI</h4>
+              <div className="p-3 bg-cream-50 rounded-2xl border border-slate-200 inline-block">
                 {qrLoading ? (
                   <div className="w-48 h-48 flex items-center justify-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin text-olive-600" />
+                    <RefreshCw className="w-6 h-6 animate-spin text-brand-600" />
                   </div>
                 ) : qrDataUrl ? (
                   <img

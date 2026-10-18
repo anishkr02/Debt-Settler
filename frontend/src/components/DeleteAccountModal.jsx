@@ -23,13 +23,14 @@ export default function DeleteAccountModal({ onClose, onDeleted }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+      <div className="panel-card max-w-md w-full p-5 sm:p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
               <Trash2 className="w-5 h-5" />
             </div>
             <div>
+              <p className="eyebrow mb-1">DEBT-SETTLE</p>
               <h3 className="text-base font-bold text-slate-900">Delete Account</h3>
               <p className="text-xs text-slate-500 font-medium">Permanent account removal</p>
             </div>
@@ -38,7 +39,7 @@ export default function DeleteAccountModal({ onClose, onDeleted }) {
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="w-8 h-8 rounded-full border border-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:text-slate-600"
           >
             <X className="w-4 h-4" />
           </button>
@@ -69,7 +70,7 @@ export default function DeleteAccountModal({ onClose, onDeleted }) {
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl transition"
+            className="secondary-btn flex-1 text-xs"
           >
             Cancel
           </button>
@@ -77,7 +78,7 @@ export default function DeleteAccountModal({ onClose, onDeleted }) {
             type="button"
             onClick={handleDelete}
             disabled={loading}
-            className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md shadow-red-600/20 transition disabled:opacity-50"
+            className="flex-1 min-h-[44px] rounded-xl bg-red-600 px-3 py-2.5 text-xs font-bold text-white shadow-md shadow-red-600/20 transition hover:bg-red-700 disabled:opacity-50"
           >
             {loading ? 'Deleting Account...' : 'Yes, Delete My Account'}
           </button>

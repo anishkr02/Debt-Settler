@@ -170,15 +170,15 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div className="min-h-screen bg-cream-100 flex flex-col font-sans">
       {/* Top Navbar */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+      <header className="bg-cream-100/95 border-b border-slate-200/80 sticky top-0 z-30 shadow-xs backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div
             onClick={() => setSelectedGroupId(null)}
             className="flex items-center gap-2.5 cursor-pointer group"
           >
-            <div className="w-9 h-9 rounded-xl bg-olive-primary text-white flex items-center justify-center shadow-md shadow-olive-primary/20 group-hover:scale-105 transition">
+            <div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-md shadow-brand-600/20 group-hover:scale-105 transition">
               <Wallet className="w-5 h-5" />
             </div>
             <span className="font-black text-lg text-slate-900 tracking-tight">Debt-Settle</span>
@@ -190,10 +190,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setProfileMenuOpen((prev) => !prev)}
-                className="flex items-center gap-2.5 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl hover:bg-slate-100 border border-slate-200/80 transition"
+                className="flex min-h-[44px] items-center gap-2.5 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl hover:bg-cream-200 border border-slate-200/80 transition"
                 title="Profile Menu"
               >
-                <div className="w-8 h-8 rounded-xl bg-olive-100 text-olive-800 flex items-center justify-center font-bold text-xs uppercase flex-shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-brand-100 text-brand-800 flex items-center justify-center font-bold text-xs uppercase flex-shrink-0">
                   {user.username ? user.username[0] : 'U'}
                 </div>
                 <div className="text-left hidden sm:block">
@@ -207,7 +207,7 @@ export default function App() {
 
               {/* Profile Dropdown Menu */}
               {profileMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-card border border-slate-200/80 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
                   <div className="px-4 py-2 border-b border-slate-100">
                     <span className="text-xs font-bold text-slate-800 block">@{user.username}</span>
                     <span className="text-[11px] text-slate-400 font-medium block truncate">
@@ -219,7 +219,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleOpenPrivacy}
-                      className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                      className="flex min-h-[44px] w-full items-center gap-2.5 px-4 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-cream-50"
                     >
                       <Shield className="w-4 h-4 text-slate-400" />
                       <span>Privacy Policy</span>
@@ -230,7 +230,7 @@ export default function App() {
                         href={feedbackUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                        className="flex min-h-[44px] w-full items-center gap-2.5 px-4 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-cream-50"
                         onClick={() => setProfileMenuOpen(false)}
                       >
                         <MessageSquare className="w-4 h-4 text-slate-400" />
@@ -243,7 +243,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                      className="flex min-h-[44px] w-full items-center gap-2.5 px-4 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-cream-50"
                     >
                       <LogOut className="w-4 h-4 text-slate-400" />
                       <span>Sign Out</span>
@@ -255,7 +255,7 @@ export default function App() {
                         setProfileMenuOpen(false);
                         setShowDeleteModal(true);
                       }}
-                      className="w-full text-left px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition"
+                      className="flex min-h-[44px] w-full items-center gap-2.5 px-4 py-2 text-left text-xs font-bold text-red-600 transition hover:bg-red-50"
                     >
                       <Trash2 className="w-4 h-4 text-red-500" />
                       <span>Delete my account</span>

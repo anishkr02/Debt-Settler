@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import secrets
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
 
@@ -46,7 +47,13 @@ from balances import compute_balances
 from settle import settle
 from upi import build_upi_link
 
-app = FastAPI(title="Debt-Settle API", version="2.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Debt-Settle API", version="2.0.0", lifespan=lifespan)
 
 logger = logging.getLogger("debt_settle")
 
@@ -128,11 +135,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def on_startup():
-    init_db()
 
 
 @app.get("/health")

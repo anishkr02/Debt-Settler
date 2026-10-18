@@ -41,9 +41,9 @@ export default function ChooseUsernameScreen({ user, onUsernameConfirmed, onLogo
   };
 
   return (
-    <div className="min-h-screen bg-cream-100 flex flex-col justify-center items-center px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="screen-shell flex flex-col justify-center items-center font-sans">
       <div className="max-w-md w-full text-center mb-6">
-        <p className="text-xs font-bold text-olive-primary uppercase tracking-widest mb-1.5">
+        <p className="eyebrow mb-1.5">
           DEBT-SETTLE
         </p>
         <h1 className="text-3xl font-black text-slate-900 leading-tight">
@@ -54,7 +54,7 @@ export default function ChooseUsernameScreen({ user, onUsernameConfirmed, onLogo
         </p>
       </div>
 
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-200/80 p-8 space-y-6">
+      <div className="panel-card max-w-md w-full p-6 sm:p-8 space-y-6">
         {error && (
           <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-2xl flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -72,7 +72,7 @@ export default function ChooseUsernameScreen({ user, onUsernameConfirmed, onLogo
                 type="text"
                 autoFocus
                 required
-                className="w-full pl-10 pr-4 py-3.5 border border-slate-300 rounded-2xl text-sm font-semibold text-slate-900 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-olive-primary placeholder:text-slate-400"
+                className="input-field pl-10 font-semibold"
                 placeholder="e.g. rahul_k"
                 value={username}
                 onChange={(e) => {
@@ -90,7 +90,7 @@ export default function ChooseUsernameScreen({ user, onUsernameConfirmed, onLogo
           <button
             type="submit"
             disabled={loading || !username.trim()}
-            className="w-full py-4 rounded-2xl bg-olive-primary hover:bg-olive-700 text-white font-bold text-base transition shadow-md active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
+            className="primary-btn w-full py-4 text-base"
           >
             {loading ? (
               <>
@@ -110,7 +110,7 @@ export default function ChooseUsernameScreen({ user, onUsernameConfirmed, onLogo
           <button
             type="button"
             onClick={onLogout}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 transition"
+            className="min-h-[44px] flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 transition"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sign in with a different account</span>

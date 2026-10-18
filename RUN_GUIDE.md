@@ -42,7 +42,7 @@ npm run dev
 1. Open **[http://localhost:5173](http://localhost:5173)** in your browser.
 2. **Instant Dev Sign-In**: Click any dev user button (e.g. `Aarav`, `Anish`, `Rahul`, `Priya`) or enter a custom username.
 3. **Dashboard**:
-   - View your expense groups in the olive/cream mobile-first list view.
+   - View your expense groups in the cream-and-forest-green mobile-first list view.
    - Click the pinned **"+ Create a new group"** button at the bottom.
 4. **2-Step Create Group Modal**:
    - **Step 1 (Details)**: Enter group name and optional UPI ID. Click **"Next →"** (no API call happens yet; purely local state).
