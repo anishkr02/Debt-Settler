@@ -59,10 +59,6 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Swagger UI is available at **http://127.0.0.1:8000/docs** for interactive API testing.
-
-Rate limiting is enabled by default; if you need to disable it locally, set `RATE_LIMIT_ENABLED=false`.
-
 ### Run Test Suite
 
 ```bash
