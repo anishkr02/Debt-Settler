@@ -78,6 +78,26 @@ class ApiClient {
     });
   }
 
+  async recordConsent(version = '1.0') {
+    return this.request('/auth/me/consent', {
+      method: 'POST',
+      body: JSON.stringify({ version }),
+    });
+  }
+
+  async deleteMyAccount() {
+    return this.request('/auth/me', {
+      method: 'DELETE',
+    });
+  }
+
+  async updateMyMemberUpi(groupId, upi_id) {
+    return this.request(`/groups/${groupId}/members/me`, {
+      method: 'PATCH',
+      body: JSON.stringify({ upi_id: upi_id || null }),
+    });
+  }
+
   async searchUsers(query) {
     return this.request(`/users/search?q=${encodeURIComponent(query)}`);
   }

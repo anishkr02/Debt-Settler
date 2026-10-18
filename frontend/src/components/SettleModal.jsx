@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { 
-  Zap, CheckCircle2, Clock, XCircle, ArrowRight, ExternalLink, 
-  ShieldAlert, RefreshCw, AlertCircle, Ban, QrCode, Check, Copy 
+  Zap, CheckCircle2, Clock, ArrowRight, ExternalLink, 
+  ShieldAlert, RefreshCw, AlertCircle, QrCode, Check, Copy 
 } from 'lucide-react';
+import QRCode from 'qrcode';
 
 export default function SettleModal({ group, currentUser, onClose, onSettlementUpdated }) {
   const [data, setData] = useState(null);
@@ -11,6 +12,9 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(null); // tx_id or 'cancel' or 'generate'
   const [qrModalTx, setQrModalTx] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrLoading, setQrLoading] = useState(false);
+  const [copiedUpiTxId, setCopiedUpiTxId] = useState(null);
 
   const fetchSettlements = async () => {
     try {
@@ -28,6 +32,18 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
   useEffect(() => {
     fetchSettlements();
   }, [group.id]);
+
+  useEffect(() => {
+    if (qrModalTx && qrModalTx.upi_link) {
+      setQrLoading(true);
+      QRCode.toDataURL(qrModalTx.upi_link, { width: 220, margin: 1 })
+        .then((url) => setQrDataUrl(url))
+        .catch((err) => console.error('Failed to generate QR code', err))
+        .finally(() => setQrLoading(false));
+    } else {
+      setQrDataUrl('');
+    }
+  }, [qrModalTx]);
 
   const handleGenerateSettlement = async () => {
     try {
@@ -103,11 +119,20 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
     }
   };
 
+  const handleCopyUpi = (txId, upiId) => {
+    if (!upiId) return;
+    navigator.clipboard.writeText(upiId);
+    setCopiedUpiTxId(txId);
+    setTimeout(() => {
+      setCopiedUpiTxId((prev) => (prev === txId ? null : prev));
+    }, 2000);
+  };
+
   const hasSettlements = data?.settlements && data.settlements.length > 0;
   const canCancel = hasSettlements && data.settlements.every((s) => s.status === 'pending');
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-xl w-full p-6 sm:p-7 space-y-5 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
         
         {/* Modal Header */}
@@ -188,29 +213,62 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
             {/* Transactions List */}
             <div className="space-y-3">
               {data.settlements.map((tx) => {
-                const isPayer = currentUser.username === tx.from_name;
-                const isReceiver = currentUser.username === tx.to_name;
+                const isPayer = currentUser?.username === tx.from_name;
+                const isReceiver = currentUser?.username === tx.to_name;
+                const hasToUpi = Boolean(tx.to_upi_id);
 
                 return (
                   <div
                     key={tx.id}
-                    className="p-4 rounded-2xl border border-slate-200 bg-white shadow-sm space-y-3"
+                    className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3"
                   >
                     {/* Direction & Amount */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                        <span className={`${isPayer ? 'text-olive-700 underline font-extrabold' : ''}`}>
-                          @{tx.from_name}
+                        <span className={isPayer ? 'text-olive-700 underline font-extrabold' : ''}>
+                          @{tx.from_name} {isPayer && <span className="text-[10px] font-normal text-slate-400">(you)</span>}
                         </span>
                         <ArrowRight className="w-4 h-4 text-slate-400" />
-                        <span className={`${isReceiver ? 'text-olive-700 underline font-extrabold' : ''}`}>
-                          @{tx.to_name}
+                        <span className={isReceiver ? 'text-olive-700 underline font-extrabold' : ''}>
+                          @{tx.to_name} {isReceiver && <span className="text-[10px] font-normal text-slate-400">(you)</span>}
                         </span>
                       </div>
                       <span className="text-base font-black text-slate-900">₹{tx.amount.toFixed(2)}</span>
                     </div>
 
-                    {/* Status Pill */}
+                    {/* Payee UPI Information / Missing Notice */}
+                    {hasToUpi ? (
+                      <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pay to UPI:</span>
+                          <span className="font-mono font-bold text-olive-800">{tx.to_upi_id}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyUpi(tx.id, tx.to_upi_id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:text-slate-900 text-[11px] font-semibold transition active:scale-95"
+                          title="Copy UPI ID"
+                        >
+                          {copiedUpiTxId === tx.id ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span className="text-emerald-700">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-slate-500" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-800">
+                        @{tx.to_name} hasn&apos;t added a UPI ID. Your UPI app will open empty. Ask them for their UPI ID or number, or scan their QR.
+                      </div>
+                    )}
+
+                    {/* Status Pill & QR button */}
                     <div className="flex items-center justify-between text-xs">
                       {tx.status === 'confirmed' ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
@@ -226,7 +284,8 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                         </span>
                       )}
 
-                      {tx.upi_link && (
+                      {/* Only offer the QR when to_upi_id is set */}
+                      {hasToUpi && tx.upi_link && (
                         <button
                           type="button"
                           onClick={() => setQrModalTx(tx)}
@@ -238,32 +297,32 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                       )}
                     </div>
 
-                    {/* Action Buttons for this transaction */}
+                    {/* Action Buttons: Payer sees Pay via UPI and Mark Paid; Receiver sees Confirm/Deny; Everyone else sees status only */}
                     <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 justify-end text-xs">
-                      {/* One-Tap UPI Link (Payer or anyone can open) */}
-                      {tx.upi_link && tx.status !== 'confirmed' && (
+                      {/* Payer only: One-Tap UPI Link (using tx.upi_link) */}
+                      {isPayer && tx.upi_link && tx.status !== 'confirmed' && (
                         <a
                           href={tx.upi_link}
-                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl flex items-center gap-1.5 transition"
+                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl flex items-center gap-1.5 transition active:scale-[0.98]"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                           <span>Pay via UPI App</span>
                         </a>
                       )}
 
-                      {/* Payer: Mark as Paid */}
+                      {/* Payer only: Mark as Paid */}
                       {isPayer && tx.status === 'pending' && (
                         <button
                           type="button"
                           onClick={() => handleMarkPaid(tx.id)}
                           disabled={actionLoading === tx.id}
-                          className="px-3.5 py-1.5 bg-olive-primary hover:bg-olive-700 text-white font-bold rounded-xl shadow-sm transition disabled:opacity-50"
+                          className="px-3.5 py-1.5 bg-olive-primary hover:bg-olive-700 text-white font-bold rounded-xl shadow-xs transition disabled:opacity-50"
                         >
                           {actionLoading === tx.id ? 'Marking...' : 'Mark as Paid'}
                         </button>
                       )}
 
-                      {/* Receiver: Confirm or Deny */}
+                      {/* Receiver only: Confirm or Deny */}
                       {isReceiver && tx.status === 'paid_pending_confirmation' && (
                         <div className="flex items-center gap-1.5">
                           <button
@@ -278,7 +337,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                             type="button"
                             onClick={() => handleConfirm(tx.id)}
                             disabled={actionLoading === tx.id}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition"
+                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition"
                           >
                             Confirm Received
                           </button>
@@ -314,26 +373,40 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
           </div>
         )}
 
-        {/* QR Code Modal Overlay */}
+        {/* Browser-Generated QR Code Modal Overlay (no external network call) */}
         {qrModalTx && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-xs w-full text-center space-y-4">
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 max-w-xs w-full text-center space-y-4 shadow-2xl animate-in zoom-in-95 duration-150">
               <h4 className="font-bold text-slate-900 text-sm">Scan to Pay via UPI</h4>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 inline-block">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                    qrModalTx.upi_link
-                  )}`}
-                  alt="UPI QR Code"
-                  className="w-44 h-44 mx-auto"
-                />
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 inline-block">
+                {qrLoading ? (
+                  <div className="w-48 h-48 flex items-center justify-center text-slate-400">
+                    <RefreshCw className="w-6 h-6 animate-spin text-olive-600" />
+                  </div>
+                ) : qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="UPI QR Code"
+                    className="w-48 h-48 mx-auto rounded-lg"
+                  />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center text-xs text-red-500">
+                    Could not generate QR code
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-slate-500 font-medium">
-                Pay ₹{qrModalTx.amount.toFixed(2)} to @{qrModalTx.to_name}
+              <p className="text-xs text-slate-600 font-medium">
+                Pay ₹{qrModalTx.amount.toFixed(2)} to <strong className="text-slate-900">@{qrModalTx.to_name}</strong>
               </p>
+              {qrModalTx.to_upi_id && (
+                <p className="text-[11px] font-mono text-slate-400">
+                  {qrModalTx.to_upi_id}
+                </p>
+              )}
               <button
+                type="button"
                 onClick={() => setQrModalTx(null)}
-                className="w-full py-2 bg-slate-900 text-white text-xs font-bold rounded-xl"
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition"
               >
                 Close
               </button>

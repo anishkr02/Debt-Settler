@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from './api/client';
 import AuthScreen from './components/AuthScreen';
+import ConsentScreen from './components/ConsentScreen';
 import ChooseUsernameScreen from './components/ChooseUsernameScreen';
 import DashboardScreen from './components/DashboardScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
-import { LogOut, Wallet, CheckCircle2, AlertCircle } from 'lucide-react';
+import PrivacyScreen from './components/PrivacyScreen';
+import DeleteAccountModal from './components/DeleteAccountModal';
+import { 
+  LogOut, Wallet, CheckCircle2, AlertCircle, Shield, 
+  MessageSquare, Trash2, ChevronDown 
+} from 'lucide-react';
 
 const JOIN_KEY_HASH = '#join=';
 const JOIN_STORAGE_KEY = 'debt_settle_pending_join';
@@ -14,7 +20,42 @@ export default function App() {
   const [selectedGroupId, setSelectedGroupId] = useState(null);
   // { type: 'success' | 'error', text } shown under the header
   const [notice, setNotice] = useState(null);
+  const [showPrivacy, setShowPrivacy] = useState(
+    window.location.pathname === '/privacy' || window.location.hash === '#privacy'
+  );
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
   const joinInFlight = useRef(false);
+  const profileMenuRef = useRef(null);
+
+  const feedbackUrl = import.meta.env.VITE_FEEDBACK_URL;
+
+  // Listen to popstate / hash for /privacy
+  useEffect(() => {
+    const handleUrlChange = () => {
+      if (window.location.pathname === '/privacy' || window.location.hash === '#privacy') {
+        setShowPrivacy(true);
+      }
+    };
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
+
+  // Close profile menu on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // 1) Capture an invite token from the URL right away and keep it in
   //    sessionStorage, so it survives sign-in and the "choose your username"
@@ -30,7 +71,7 @@ export default function App() {
 
   // 2) Once the person is signed in AND has confirmed a username, use the token.
   useEffect(() => {
-    if (!user || user.username_confirmed === false) return;
+    if (!user || !user.consented_at || user.username_confirmed === false) return;
     const token = sessionStorage.getItem(JOIN_STORAGE_KEY);
     if (!token || joinInFlight.current) return;
 
@@ -72,12 +113,52 @@ export default function App() {
     api.clearSession();
     setUser(null);
     setSelectedGroupId(null);
+    setProfileMenuOpen(false);
+    setShowDeleteModal(false);
   };
 
-  if (!user) {
-    return <AuthScreen onLoginSuccess={(u) => setUser(u)} />;
+  const handleOpenPrivacy = () => {
+    setProfileMenuOpen(false);
+    setShowPrivacy(true);
+  };
+
+  const handleClosePrivacy = () => {
+    setShowPrivacy(false);
+    if (window.location.pathname === '/privacy') {
+      window.history.pushState(null, '', '/');
+    }
+    if (window.location.hash === '#privacy') {
+      window.location.hash = '';
+    }
+  };
+
+  // If viewing privacy page
+  if (showPrivacy) {
+    return <PrivacyScreen onBack={handleClosePrivacy} />;
   }
 
+  // Auth screen
+  if (!user) {
+    return (
+      <AuthScreen
+        onLoginSuccess={(u) => setUser(u)}
+        onViewPrivacy={handleOpenPrivacy}
+      />
+    );
+  }
+
+  // Consent screen: if user has no consent recorded yet
+  if (!user.consented_at) {
+    return (
+      <ConsentScreen
+        onConsentGiven={(updatedUser) => setUser(updatedUser)}
+        onLogout={handleLogout}
+        onViewPrivacy={handleOpenPrivacy}
+      />
+    );
+  }
+
+  // Choose username screen: if username not confirmed yet
   if (user.username_confirmed === false) {
     return (
       <ChooseUsernameScreen
@@ -104,20 +185,85 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <span className="text-xs font-bold text-slate-800 block">@{user.username}</span>
-              <span className="text-[11px] text-slate-400 font-medium block">{user.email || 'Dev Mode'}</span>
+            {/* Profile Dropdown Trigger */}
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setProfileMenuOpen((prev) => !prev)}
+                className="flex items-center gap-2.5 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl hover:bg-slate-100 border border-slate-200/80 transition"
+                title="Profile Menu"
+              >
+                <div className="w-8 h-8 rounded-xl bg-olive-100 text-olive-800 flex items-center justify-center font-bold text-xs uppercase flex-shrink-0">
+                  {user.username ? user.username[0] : 'U'}
+                </div>
+                <div className="text-left hidden sm:block">
+                  <span className="text-xs font-bold text-slate-800 block leading-tight">@{user.username}</span>
+                  <span className="text-[10px] text-slate-400 font-medium block leading-tight truncate max-w-[120px]">
+                    {user.email || 'Dev Mode'}
+                  </span>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+              </button>
+
+              {/* Profile Dropdown Menu */}
+              {profileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-4 py-2 border-b border-slate-100">
+                    <span className="text-xs font-bold text-slate-800 block">@{user.username}</span>
+                    <span className="text-[11px] text-slate-400 font-medium block truncate">
+                      {user.email || 'Dev Mode'}
+                    </span>
+                  </div>
+
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={handleOpenPrivacy}
+                      className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                    >
+                      <Shield className="w-4 h-4 text-slate-400" />
+                      <span>Privacy Policy</span>
+                    </button>
+
+                    {feedbackUrl && (
+                      <a
+                        href={feedbackUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                        onClick={() => setProfileMenuOpen(false)}
+                      >
+                        <MessageSquare className="w-4 h-4 text-slate-400" />
+                        <span>Send feedback</span>
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="border-t border-slate-100 py-1">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                    >
+                      <LogOut className="w-4 h-4 text-slate-400" />
+                      <span>Sign Out</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        setShowDeleteModal(true);
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                      <span>Delete my account</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="w-8 h-8 rounded-full bg-olive-100 text-olive-800 flex items-center justify-center font-bold text-xs uppercase">
-              {user.username ? user.username[0] : 'U'}
-            </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 transition"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </header>
@@ -163,6 +309,14 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Delete Account Confirmation Dialog */}
+      {showDeleteModal && (
+        <DeleteAccountModal
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={handleLogout}
+        />
+      )}
     </div>
   );
 }
