@@ -54,6 +54,15 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
     };
   }, [groupId]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (activeTab !== 'chat' && document.visibilityState === 'visible') {
+        fetchGroup();
+      }
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [activeTab, fetchGroup]);
+
   if ((loading && !group) || (loadedGroupId !== groupId && !error)) {
     return (
       <div className="py-24 text-center text-slate-400">
@@ -160,13 +169,20 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition ${
+            className={`relative flex items-center justify-center gap-2 py-2.5 rounded-xl transition ${
               activeTab === id
                 ? 'bg-white text-ink-900 shadow-sm'
                 : 'text-slate-600 hover:bg-white/60 hover:text-ink-900'
             }`}
           >
-            <Icon className="w-4 h-4" />
+            <span className="relative">
+              <Icon className="w-4 h-4" />
+              {id === 'chat' && activeTab !== 'chat' && group.unread_chat_count > 0 && (
+                <span className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                  {group.unread_chat_count > 99 ? '99+' : group.unread_chat_count}
+                </span>
+              )}
+            </span>
             <span className="hidden sm:inline">{label}</span>
           </button>
         ))}
@@ -194,6 +210,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
           <ChatTab
             group={group}
             currentUser={currentUser}
+            onRead={fetchGroup}
           />
         )}
       </div>

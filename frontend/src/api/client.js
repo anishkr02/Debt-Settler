@@ -208,6 +208,12 @@ class ApiClient {
       body: JSON.stringify({ body }),
     });
   }
+
+  async markChatRead(groupId) {
+    return this.request(`/groups/${groupId}/chat/read`, {
+      method: 'POST',
+    });
+  }
 }
 
 export const api = new ApiClient();

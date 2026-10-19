@@ -47,6 +47,7 @@ class GroupMember(SQLModel, table=True):
     upi_id: Optional[str] = None
     is_admin: bool = Field(default=False)
     active: bool = Field(default=True)
+    last_read_chat_id: Optional[int] = Field(default=None)
 
     group: Optional[Group] = Relationship(back_populates="members")
     user: Optional[User] = Relationship(back_populates="memberships")

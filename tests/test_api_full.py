@@ -626,6 +626,134 @@ def test_group_chat_and_retention():
         assert len(session.exec(select(ChatMessageDB).where(ChatMessageDB.group_id == g_id)).all()) == 0
 
 
+def _create_unread_chat_group(group_name):
+    admin_name = f"{group_name}_admin"
+    member_name = f"{group_name}_member"
+    assert client.post(
+        "/auth/signup",
+        json={"username": admin_name, "email": f"{admin_name}@example.com"}
+    ).status_code == 200
+    assert client.post(
+        "/auth/signup",
+        json={"username": member_name, "email": f"{member_name}@example.com"}
+    ).status_code == 200
+    admin_headers = {"X-Dev-Username": admin_name}
+    member_headers = {"X-Dev-Username": member_name}
+    group = client.post("/groups", json={"name": group_name}, headers=admin_headers).json()
+    assert client.post(
+        f"/groups/{group['id']}/invite",
+        json={"method": "username", "username": member_name},
+        headers=admin_headers
+    ).status_code == 200
+    return group["id"], admin_headers, member_headers
+
+
+def test_unread_chat_count_excludes_sender():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("unread_count")
+    assert client.get(f"/groups/{group_id}", headers=admin_headers).json()["unread_chat_count"] == 0
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_chat_count"] == 0
+
+    sent = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "Unread test"},
+        headers=admin_headers
+    )
+    assert sent.status_code == 200
+    assert client.get(f"/groups/{group_id}", headers=admin_headers).json()["unread_chat_count"] == 0
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_chat_count"] == 1
+
+
+def test_marking_chat_read_clears_only_member_count():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("mark_read")
+    assert client.get(f"/groups/{group_id}", headers=admin_headers).json()["unread_chat_count"] == 0
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_chat_count"] == 0
+    sent = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "Mark-read test"},
+        headers=admin_headers
+    )
+    assert sent.status_code == 200
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_chat_count"] == 1
+
+    marked = client.post(f"/groups/{group_id}/chat/read", headers=member_headers)
+    assert marked.status_code == 200
+    assert marked.json() == {"unread_chat_count": 0}
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_chat_count"] == 0
+    assert client.get(f"/groups/{group_id}", headers=admin_headers).json()["unread_chat_count"] == 0
+
+
+def test_non_member_cannot_mark_group_chat_read():
+    group_id, _, _ = _create_unread_chat_group("nonmember")
+    client.post("/auth/signup", json={"username": "unread_outsider", "email": "unread_outsider@example.com"})
+
+    response = client.post(
+        f"/groups/{group_id}/chat/read",
+        headers={"X-Dev-Username": "unread_outsider"}
+    )
+    assert response.status_code == 403
+
+
+def test_new_member_starts_with_no_unread_old_messages():
+    group_id, admin_headers, _ = _create_unread_chat_group("newchat")
+    assert client.get(f"/groups/{group_id}", headers=admin_headers).status_code == 200
+    sent = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "Old message"},
+        headers=admin_headers
+    )
+    assert sent.status_code == 200
+    client.post("/auth/signup", json={"username": "unread_later", "email": "unread_later@example.com"})
+    joined = client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "unread_later"},
+        headers=admin_headers
+    )
+    assert joined.status_code == 200
+
+    response = client.get(
+        f"/groups/{group_id}",
+        headers={"X-Dev-Username": "unread_later"}
+    )
+    assert response.status_code == 200
+    assert response.json()["unread_chat_count"] == 0
+
+
+def test_chat_read_endpoint_works_for_fully_settled_group():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("settled_chat")
+    client.get(f"/groups/{group_id}", headers=member_headers)
+    sent = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "Read-only chat message"},
+        headers=admin_headers
+    )
+    assert sent.status_code == 200
+    with Session(test_engine) as session:
+        group = session.get(Group, group_id)
+        group.fully_settled_at = datetime.now(timezone.utc)
+        session.add(group)
+        session.commit()
+
+    response = client.post(f"/groups/{group_id}/chat/read", headers=member_headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == {"unread_chat_count": 0}
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_chat_count"] == 0
+
+
+def test_group_list_includes_unread_chat_count():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("unread_list")
+    assert client.get("/groups", headers=member_headers).json()[0]["unread_chat_count"] == 0
+    sent = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "List unread message"},
+        headers=admin_headers
+    )
+    assert sent.status_code == 200
+
+    groups = client.get("/groups", headers=member_headers)
+    assert groups.status_code == 200
+    assert groups.json()[0]["unread_chat_count"] == 1
+
+
 def test_retention_deletes_group_settled_eight_days_ago():
     with Session(test_engine) as session:
         group = Group(

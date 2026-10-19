@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { Send, Lock, MessageSquare, RefreshCw, AlertCircle } from 'lucide-react';
 
-export default function ChatTab({ group, currentUser }) {
+export default function ChatTab({ group, currentUser, onRead }) {
   const [messages, setMessages] = useState([]);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [newMsg, setNewMsg] = useState('');
@@ -10,6 +10,7 @@ export default function ChatTab({ group, currentUser }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
+  const lastMarkedReadId = useRef(0);
 
   const fetchChat = useCallback(async () => {
     try {
@@ -23,6 +24,19 @@ export default function ChatTab({ group, currentUser }) {
       setLoading(false);
     }
   }, [group.id]);
+
+  useEffect(() => {
+    const newestMessageId = messages.reduce((newest, message) => Math.max(newest, message.id), 0);
+    if (newestMessageId <= lastMarkedReadId.current) return;
+
+    lastMarkedReadId.current = newestMessageId;
+    api.markChatRead(group.id)
+      .then(() => onRead?.())
+      .catch((err) => {
+        lastMarkedReadId.current = newestMessageId - 1;
+        setError(err.message || 'Could not mark chat as read');
+      });
+  }, [messages, group.id, onRead]);
 
   useEffect(() => {
     let active = true;

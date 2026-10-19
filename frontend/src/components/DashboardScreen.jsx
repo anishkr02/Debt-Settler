@@ -512,6 +512,13 @@ export default function DashboardScreen({ user, onSelectGroup }) {
     };
   }, []);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchGroups();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [fetchGroups]);
+
   const handleCreated = async (id) => {
     setShowCreate(false);
     await fetchGroups();
@@ -580,6 +587,11 @@ export default function DashboardScreen({ user, onSelectGroup }) {
 
                 {/* Status / arrow */}
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {g.unread_chat_count > 0 && (
+                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                      {g.unread_chat_count > 99 ? '99+' : g.unread_chat_count}
+                    </span>
+                  )}
                   {g.fully_settled_at && (
                     <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
                       Settled

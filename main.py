@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -533,6 +533,25 @@ def search_users(q: str, request: Request, current_user: User = Depends(get_curr
 # Groups & Member Invites
 # -------------------------------------------------------------
 
+def get_unread_chat_count(session: Session, membership: GroupMember) -> int:
+    if membership.last_read_chat_id is None:
+        latest_message_id = session.exec(
+            select(func.max(ChatMessageDB.id)).where(ChatMessageDB.group_id == membership.group_id)
+        ).one()
+        membership.last_read_chat_id = latest_message_id or 0
+        session.add(membership)
+        session.commit()
+        return 0
+
+    return session.exec(
+        select(func.count(ChatMessageDB.id)).where(
+            ChatMessageDB.group_id == membership.group_id,
+            ChatMessageDB.id > membership.last_read_chat_id,
+            ChatMessageDB.sender_member_id != membership.id
+        )
+    ).one()
+
+
 @app.post("/groups")
 def create_group(
     payload: GroupCreate,
@@ -592,7 +611,8 @@ def list_my_groups(
                 "expenses_count": expenses_count,
                 "is_frozen": is_frozen,
                 "fully_settled_at": group.fully_settled_at,
-                "created_at": group.created_at
+                "created_at": group.created_at,
+                "unread_chat_count": get_unread_chat_count(session, mem)
             })
     return result
 
@@ -638,6 +658,7 @@ def get_group(
         "fully_settled_at": group.fully_settled_at,
         "is_admin": me.is_admin,            # is the CALLER the admin of this group
         "expenses_count": expenses_count,
+        "unread_chat_count": get_unread_chat_count(session, me),
         "members": members_data
     }
 
@@ -1231,6 +1252,25 @@ def get_chat_history(
             for msg in messages
         ]
     }
+
+
+@app.post("/groups/{group_id}/chat/read")
+@limiter.limit("60/minute")
+def mark_chat_read(
+    group_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    membership = get_group_membership(group_id, current_user, session)
+    latest_message_id = session.exec(
+        select(func.max(ChatMessageDB.id)).where(ChatMessageDB.group_id == group_id)
+    ).one()
+    if latest_message_id is not None:
+        membership.last_read_chat_id = latest_message_id
+        session.add(membership)
+        session.commit()
+    return {"unread_chat_count": 0}
 
 
 # -------------------------------------------------------------
