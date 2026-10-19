@@ -6,6 +6,7 @@ import {
   ChevronLeft, Plus,
 } from 'lucide-react';
 import InvitePanel from './InvitePanel';
+import InstallPrompt from './InstallPrompt';
 import { buildJoinUrl, copyText } from '../lib/joinLink';
 
 // ─── tiny shared input style ─────────────────────────────────────────────────
@@ -527,6 +528,7 @@ export default function DashboardScreen({ user, onSelectGroup }) {
 
   return (
     <div className="min-h-screen bg-cream-100 flex flex-col">
+      <InstallPrompt />
       {/* Header */}
       <section className="hero-card mx-1 mt-3 mb-6">
         <p className="eyebrow mb-2 text-brand-300">
