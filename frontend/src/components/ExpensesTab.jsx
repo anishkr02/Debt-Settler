@@ -2,7 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { Plus, Receipt, AlertCircle, RefreshCw, Lock } from 'lucide-react';
 
-export default function ExpensesTab({ group, onExpenseLogged }) {
+export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
+  const myMember = group.members.find((m) => m.name === currentUser?.username);
+  const defaultPayerId = myMember ? myMember.id : (group.members[0]?.id || '');
+
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -15,7 +18,7 @@ export default function ExpensesTab({ group, onExpenseLogged }) {
   const [description, setDescription] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
   const [splitType, setSplitType] = useState('equal'); // equal | exact | percentage | shares
-  const [paidBy, setPaidBy] = useState(group.members[0]?.id || '');
+  const [paidBy, setPaidBy] = useState(defaultPayerId);
   const [isMultiPayer, setIsMultiPayer] = useState(false);
   const [payersMap, setPayersMap] = useState({}); // member_id -> amount
   const [selectedSplits, setSelectedSplits] = useState(
@@ -207,7 +210,7 @@ export default function ExpensesTab({ group, onExpenseLogged }) {
                 + Add IOU
               </button>
               <button
-                onClick={() => setShowAddExpense(true)}
+                onClick={() => { setPaidBy(defaultPayerId); setShowAddExpense(true); }}
                 className="primary-btn"
               >
                 <Plus className="w-4 h-4" />
@@ -351,7 +354,7 @@ export default function ExpensesTab({ group, onExpenseLogged }) {
                     onChange={(e) => setPaidBy(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white"
                   >
-                    {group.members.map((m) => (
+                    {[...group.members].sort((a, b) => (a.id === defaultPayerId ? -1 : b.id === defaultPayerId ? 1 : 0)).map((m) => (
                       <option key={m.id} value={m.id}>
                         @{m.name}
                       </option>

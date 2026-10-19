@@ -196,6 +196,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
         {activeTab === 'expenses' && (
           <ExpensesTab
             group={group}
+            currentUser={currentUser}
             onExpenseLogged={fetchGroup}
           />
         )}
