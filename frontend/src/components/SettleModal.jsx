@@ -66,7 +66,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
     return undefined;
   }, [qrModalTx]);
 
-  const qrDataUrl = qrResult?.txId === qrModalTx?.id ? qrResult.dataUrl : '';
+  const qrDataUrl = qrResult && qrModalTx && qrResult.txId === qrModalTx.id ? qrResult.dataUrl : '';
   const qrLoading = Boolean(qrModalTx && qrResult?.txId !== qrModalTx.id);
 
   const handleGenerateSettlement = async () => {
