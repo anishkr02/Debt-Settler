@@ -13,7 +13,7 @@ import {
 export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
   const [group, setGroup] = useState(null);
   const [loadedGroupId, setLoadedGroupId] = useState(null);
-  const [activeTab, setActiveTab] = useState('balances'); // balances | expenses | members | chat
+  const [activeTab, setActiveTab] = useState('expenses'); // expenses | members | balances | chat
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -152,9 +152,9 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
       {/* Tabs Bar */}
       <div className="grid grid-cols-4 gap-1 rounded-2xl border border-slate-200/80 bg-cream-200 p-1.5 text-xs font-bold">
         {[
-          { id: 'balances', label: 'Balances', icon: Scale },
           { id: 'expenses', label: 'Expenses', icon: Receipt },
           { id: 'members', label: 'Members', icon: Users },
+          { id: 'balances', label: 'Balances', icon: Scale },
           { id: 'chat', label: 'Chat', icon: MessageSquare },
         ].map(({ id, label, icon: Icon }) => (
           <button
