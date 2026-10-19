@@ -1277,3 +1277,180 @@ def test_group_detail_reports_admin_flag_and_expense_count():
                 json={"description": "x", "total_amount": 10, "paid_by": ids["alice"],
                       "split_among": [ids["alice"], ids["bob"]]}, headers=alice)
     assert client.get(f"/groups/{gid}", headers=alice).json()["expenses_count"] == 1
+
+
+def test_expense_unread_counts_for_equal_and_general_endpoints():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("exp_track")
+    group = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    client.get(f"/groups/{group_id}", headers=member_headers)
+    admin_member_id = next(member["id"] for member in group["members"] if member["name"] == "exp_track_admin")
+    member_id = next(member["id"] for member in group["members"] if member["name"] == "exp_track_member")
+
+    equal = client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Equal expense",
+            "total_amount": 20,
+            "paid_by": admin_member_id,
+            "split_among": [admin_member_id, member_id]
+        },
+        headers=admin_headers
+    )
+    assert equal.status_code == 200
+    admin_counts = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    member_counts = client.get(f"/groups/{group_id}", headers=member_headers).json()
+    assert admin_counts["unread_expense_count"] == 0
+    assert member_counts["unread_expense_count"] == 1
+
+    cleared = client.post(
+        f"/groups/{group_id}/seen",
+        json={"section": "expenses"},
+        headers=member_headers
+    )
+    assert cleared.status_code == 200
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_expense_count"] == 0
+
+    general = client.post(
+        f"/groups/{group_id}/expenses",
+        json={
+            "description": "General expense",
+            "total_amount": 30,
+            "split_type": "equal",
+            "paid_by": [{"member_id": admin_member_id, "amount_paid": 30}],
+            "split_among": [{"member_id": admin_member_id}, {"member_id": member_id}]
+        },
+        headers=admin_headers
+    )
+    assert general.status_code == 200
+    admin_counts = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    member_counts = client.get(f"/groups/{group_id}", headers=member_headers).json()
+    assert admin_counts["unread_expense_count"] == 0
+    assert member_counts["unread_expense_count"] == 1
+
+
+def test_new_member_unread_count_and_seen_clears_members():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("member_track")
+    client.get(f"/groups/{group_id}", headers=admin_headers)
+    client.get(f"/groups/{group_id}", headers=member_headers)
+    client.post("/auth/signup", json={"username": "member_c", "email": "member_c@example.com"})
+    joined = client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "member_c"},
+        headers=admin_headers
+    )
+    assert joined.status_code == 200
+
+    admin_data = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    member_data = client.get(f"/groups/{group_id}", headers=member_headers).json()
+    new_member_data = client.get(
+        f"/groups/{group_id}",
+        headers={"X-Dev-Username": "member_c"}
+    ).json()
+    assert admin_data["unread_member_count"] == 1
+    assert member_data["unread_member_count"] == 1
+    assert new_member_data["unread_member_count"] == 0
+
+    cleared = client.post(
+        f"/groups/{group_id}/seen",
+        json={"section": "members"},
+        headers=admin_headers
+    )
+    assert cleared.status_code == 200
+    assert client.get(f"/groups/{group_id}", headers=admin_headers).json()["unread_member_count"] == 0
+    assert client.get(f"/groups/{group_id}", headers=member_headers).json()["unread_member_count"] == 1
+
+
+def test_new_member_starts_with_zero_unread_counts_after_old_data():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("old_data")
+    group = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    client.get(f"/groups/{group_id}", headers=member_headers)
+    admin_member_id = next(member["id"] for member in group["members"] if member["name"] == "old_data_admin")
+    member_id = next(member["id"] for member in group["members"] if member["name"] == "old_data_member")
+
+    client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Old expense",
+            "total_amount": 20,
+            "paid_by": admin_member_id,
+            "split_among": [admin_member_id, member_id]
+        },
+        headers=admin_headers
+    )
+    client.post(f"/groups/{group_id}/chat", json={"body": "Old chat"}, headers=admin_headers)
+    client.post("/auth/signup", json={"username": "old_data_c", "email": "old_data_c@example.com"})
+    joined = client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "old_data_c"},
+        headers=admin_headers
+    )
+    assert joined.status_code == 200
+
+    response = client.get(
+        f"/groups/{group_id}",
+        headers={"X-Dev-Username": "old_data_c"}
+    )
+    assert response.status_code == 200
+    assert response.json()["unread_chat_count"] == 0
+    assert response.json()["unread_expense_count"] == 0
+    assert response.json()["unread_member_count"] == 0
+
+
+def test_seen_requires_membership_and_rejects_invalid_section():
+    group_id, admin_headers, _ = _create_unread_chat_group("seen_auth")
+    client.post("/auth/signup", json={"username": "seen_outsider", "email": "seen_outsider@example.com"})
+
+    non_member = client.post(
+        f"/groups/{group_id}/seen",
+        json={"section": "expenses"},
+        headers={"X-Dev-Username": "seen_outsider"}
+    )
+    assert non_member.status_code == 403
+
+    invalid_section = client.post(
+        f"/groups/{group_id}/seen",
+        json={"section": "chat"},
+        headers=admin_headers
+    )
+    assert invalid_section.status_code == 422
+
+
+def test_group_list_includes_total_unread_count():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("total")
+    group = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    client.get(f"/groups/{group_id}", headers=member_headers)
+    admin_member_id = next(member["id"] for member in group["members"] if member["name"] == "total_admin")
+    member_id = next(member["id"] for member in group["members"] if member["name"] == "total_member")
+
+    assert client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "Unread chat"},
+        headers=admin_headers
+    ).status_code == 200
+    assert client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Unread expense",
+            "total_amount": 20,
+            "paid_by": admin_member_id,
+            "split_among": [admin_member_id, member_id]
+        },
+        headers=admin_headers
+    ).status_code == 200
+    client.post("/auth/signup", json={"username": "total_c", "email": "total_c@example.com"})
+    joined = client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "total_c"},
+        headers=admin_headers
+    )
+    assert joined.status_code == 200
+
+    groups = client.get("/groups", headers=member_headers)
+    assert groups.status_code == 200
+    item = next(group for group in groups.json() if group["id"] == group_id)
+    assert item["unread_chat_count"] == 1
+    assert item["unread_expense_count"] == 1
+    assert item["unread_member_count"] == 1
+    assert item["unread_total_count"] == (
+        item["unread_chat_count"] + item["unread_expense_count"] + item["unread_member_count"]
+    )

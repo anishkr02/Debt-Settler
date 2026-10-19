@@ -48,6 +48,8 @@ class GroupMember(SQLModel, table=True):
     is_admin: bool = Field(default=False)
     active: bool = Field(default=True)
     last_read_chat_id: Optional[int] = Field(default=None)
+    last_seen_expense_id: Optional[int] = Field(default=None)
+    last_seen_member_id: Optional[int] = Field(default=None)
 
     group: Optional[Group] = Relationship(back_populates="members")
     user: Optional[User] = Relationship(back_populates="memberships")
@@ -71,6 +73,7 @@ class ExpenseDB(SQLModel, table=True):
     description: str
     total_amount: float
     split_type: str = Field(default="equal", description="equal | exact | percentage | shares")
+    created_by_member_id: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     group: Optional[Group] = Relationship(back_populates="expenses")

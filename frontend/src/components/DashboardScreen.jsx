@@ -589,9 +589,9 @@ export default function DashboardScreen({ user, onSelectGroup }) {
 
                 {/* Status / arrow */}
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {g.unread_chat_count > 0 && (
+                  {g.unread_total_count > 0 && (
                     <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
-                      {g.unread_chat_count > 99 ? '99+' : g.unread_chat_count}
+                      {g.unread_total_count > 99 ? '99+' : g.unread_total_count}
                     </span>
                   )}
                   {g.fully_settled_at && (

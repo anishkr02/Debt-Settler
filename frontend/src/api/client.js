@@ -111,6 +111,13 @@ class ApiClient {
     return this.request(`/groups/${id}`);
   }
 
+  async markSeen(groupId, section) {
+    return this.request(`/groups/${groupId}/seen`, {
+      method: 'POST',
+      body: JSON.stringify({ section }),
+    });
+  }
+
   async createGroup(name, admin_upi_id = null) {
     return this.request('/groups', {
       method: 'POST',

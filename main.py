@@ -11,7 +11,7 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Literal
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -223,6 +223,10 @@ class DebtCreate(BaseModel):
 
 class ChatCreate(BaseModel):
     body: str
+
+
+class SeenSection(BaseModel):
+    section: Literal["expenses", "members"]
 
 
 # -------------------------------------------------------------
@@ -552,6 +556,46 @@ def get_unread_chat_count(session: Session, membership: GroupMember) -> int:
     ).one()
 
 
+def get_unread_expense_and_member_counts(session: Session, membership: GroupMember) -> tuple[int, int]:
+    initialized_expenses = membership.last_seen_expense_id is None
+    initialized_members = membership.last_seen_member_id is None
+
+    if initialized_expenses:
+        latest_expense_id = session.exec(
+            select(func.max(ExpenseDB.id)).where(ExpenseDB.group_id == membership.group_id)
+        ).one()
+        membership.last_seen_expense_id = latest_expense_id or 0
+
+    if initialized_members:
+        latest_member_id = session.exec(
+            select(func.max(GroupMember.id)).where(GroupMember.group_id == membership.group_id)
+        ).one()
+        membership.last_seen_member_id = latest_member_id or 0
+
+    if initialized_expenses or initialized_members:
+        session.add(membership)
+        session.commit()
+
+    unread_expense_count = 0 if initialized_expenses else session.exec(
+        select(func.count(ExpenseDB.id)).where(
+            ExpenseDB.group_id == membership.group_id,
+            ExpenseDB.id > membership.last_seen_expense_id,
+            or_(
+                ExpenseDB.created_by_member_id.is_(None),
+                ExpenseDB.created_by_member_id != membership.id
+            )
+        )
+    ).one()
+    unread_member_count = 0 if initialized_members else session.exec(
+        select(func.count(GroupMember.id)).where(
+            GroupMember.group_id == membership.group_id,
+            GroupMember.id > membership.last_seen_member_id,
+            GroupMember.id != membership.id
+        )
+    ).one()
+    return unread_expense_count, unread_member_count
+
+
 @app.post("/groups")
 def create_group(
     payload: GroupCreate,
@@ -602,6 +646,8 @@ def list_my_groups(
             is_frozen = bool(session.exec(
                 select(SettlementTransactionDB).where(SettlementTransactionDB.group_id == group.id)
             ).first())
+            unread_chat_count = get_unread_chat_count(session, mem)
+            unread_expense_count, unread_member_count = get_unread_expense_and_member_counts(session, mem)
             
             result.append({
                 "id": group.id,
@@ -612,7 +658,10 @@ def list_my_groups(
                 "is_frozen": is_frozen,
                 "fully_settled_at": group.fully_settled_at,
                 "created_at": group.created_at,
-                "unread_chat_count": get_unread_chat_count(session, mem)
+                "unread_chat_count": unread_chat_count,
+                "unread_expense_count": unread_expense_count,
+                "unread_member_count": unread_member_count,
+                "unread_total_count": unread_chat_count + unread_expense_count + unread_member_count
             })
     return result
 
@@ -650,6 +699,8 @@ def get_group(
     expenses_count = len(session.exec(
         select(ExpenseDB).where(ExpenseDB.group_id == group_id)
     ).all())
+    unread_chat_count = get_unread_chat_count(session, me)
+    unread_expense_count, unread_member_count = get_unread_expense_and_member_counts(session, me)
 
     return {
         "id": group.id,
@@ -658,7 +709,9 @@ def get_group(
         "fully_settled_at": group.fully_settled_at,
         "is_admin": me.is_admin,            # is the CALLER the admin of this group
         "expenses_count": expenses_count,
-        "unread_chat_count": get_unread_chat_count(session, me),
+        "unread_chat_count": unread_chat_count,
+        "unread_expense_count": unread_expense_count,
+        "unread_member_count": unread_member_count,
         "members": members_data
     }
 
@@ -794,7 +847,7 @@ def add_equal_expense(
     session: Session = Depends(get_session)
 ):
     """Convenience endpoint: single payer, equal split among members."""
-    get_group_membership(group_id, current_user, session)
+    membership = get_group_membership(group_id, current_user, session)
     check_group_not_frozen(group_id, session)
 
     splits = compute_splits("equal", payload.split_among, payload.total_amount)
@@ -804,7 +857,8 @@ def add_equal_expense(
         group_id=group_id,
         description=payload.description,
         total_amount=payload.total_amount,
-        split_type="equal"
+        split_type="equal",
+        created_by_member_id=membership.id
     )
     session.add(expense)
     session.commit()
@@ -827,7 +881,7 @@ def add_expense_general(
     session: Session = Depends(get_session)
 ):
     """Multi-payer and unequal split endpoint (equal, exact, percentage, shares)."""
-    get_group_membership(group_id, current_user, session)
+    membership = get_group_membership(group_id, current_user, session)
     check_group_not_frozen(group_id, session)
 
     payers = validate_and_compute_payers(payload.paid_by, payload.total_amount)
@@ -837,7 +891,8 @@ def add_expense_general(
         group_id=group_id,
         description=payload.description,
         total_amount=payload.total_amount,
-        split_type=payload.split_type
+        split_type=payload.split_type,
+        created_by_member_id=membership.id
     )
     session.add(expense)
     session.commit()
@@ -1271,6 +1326,42 @@ def mark_chat_read(
         session.add(membership)
         session.commit()
     return {"unread_chat_count": 0}
+
+
+@app.post("/groups/{group_id}/seen")
+@limiter.limit("60/minute")
+def mark_group_section_seen(
+    group_id: int,
+    payload: SeenSection,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    membership = get_group_membership(group_id, current_user, session)
+    if payload.section == "expenses":
+        latest_expense_id = session.exec(
+            select(func.max(ExpenseDB.id)).where(ExpenseDB.group_id == group_id)
+        ).one()
+        if latest_expense_id is not None:
+            membership.last_seen_expense_id = latest_expense_id
+            session.add(membership)
+            session.commit()
+    else:
+        latest_member_id = session.exec(
+            select(func.max(GroupMember.id)).where(GroupMember.group_id == group_id)
+        ).one()
+        if latest_member_id is not None:
+            membership.last_seen_member_id = latest_member_id
+            session.add(membership)
+            session.commit()
+
+    unread_expense_count, unread_member_count = get_unread_expense_and_member_counts(session, membership)
+    unread_chat_count = get_unread_chat_count(session, membership)
+    return {
+        "unread_chat_count": unread_chat_count,
+        "unread_expense_count": unread_expense_count,
+        "unread_member_count": unread_member_count,
+    }
 
 
 # -------------------------------------------------------------

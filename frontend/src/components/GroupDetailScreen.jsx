@@ -63,6 +63,19 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
     return () => clearInterval(interval);
   }, [activeTab, fetchGroup]);
 
+  useEffect(() => {
+    const unreadCount = activeTab === 'expenses'
+      ? group?.unread_expense_count
+      : activeTab === 'members'
+        ? group?.unread_member_count
+        : 0;
+    if (unreadCount > 0) {
+      api.markSeen(groupId, activeTab).then(fetchGroup).catch((err) => {
+        console.error('Could not mark group section as seen:', err);
+      });
+    }
+  }, [activeTab, groupId, group?.unread_expense_count, group?.unread_member_count, fetchGroup]);
+
   if ((loading && !group) || (loadedGroupId !== groupId && !error)) {
     return (
       <div className="py-24 text-center text-slate-400">
@@ -165,27 +178,34 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
           { id: 'members', label: 'Members', icon: Users },
           { id: 'balances', label: 'Balances', icon: Scale },
           { id: 'chat', label: 'Chat', icon: MessageSquare },
-        ].map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`relative flex items-center justify-center gap-2 py-2.5 rounded-xl transition ${
-              activeTab === id
-                ? 'bg-white text-ink-900 shadow-sm'
-                : 'text-slate-600 hover:bg-white/60 hover:text-ink-900'
-            }`}
-          >
-            <span className="relative">
-              <Icon className="w-4 h-4" />
-              {id === 'chat' && activeTab !== 'chat' && group.unread_chat_count > 0 && (
-                <span className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
-                  {group.unread_chat_count > 99 ? '99+' : group.unread_chat_count}
-                </span>
-              )}
-            </span>
-            <span className="hidden sm:inline">{label}</span>
-          </button>
-        ))}
+        ].map(({ id, label, icon: Icon }) => {
+          const unreadCount = {
+            expenses: group.unread_expense_count,
+            members: group.unread_member_count,
+            chat: group.unread_chat_count,
+          }[id] || 0;
+          return (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`relative flex items-center justify-center gap-2 py-2.5 rounded-xl transition ${
+                activeTab === id
+                  ? 'bg-white text-ink-900 shadow-sm'
+                  : 'text-slate-600 hover:bg-white/60 hover:text-ink-900'
+              }`}
+            >
+              <span className="relative">
+                <Icon className="w-4 h-4" />
+                {activeTab !== id && unreadCount > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </span>
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Active Tab Component */}
