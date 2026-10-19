@@ -19,7 +19,7 @@ def sqlalchemy_database_url(database_url: str) -> str:
 DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./debt_settle.db"))
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-engine = create_engine(sqlalchemy_database_url(DATABASE_URL), echo=False, connect_args=connect_args)
+engine = create_engine(sqlalchemy_database_url(DATABASE_URL), echo=False, connect_args=connect_args, pool_pre_ping=True)
 
 
 def init_db():
