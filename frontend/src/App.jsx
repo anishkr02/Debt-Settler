@@ -7,6 +7,7 @@ import DashboardScreen from './components/DashboardScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
 import PrivacyScreen from './components/PrivacyScreen';
 import DeleteAccountModal from './components/DeleteAccountModal';
+import { updateAppBadge } from './lib/appBadge';
 import { 
   LogOut, Wallet, CheckCircle2, AlertCircle, Shield, 
   MessageSquare, Trash2, ChevronDown 
@@ -127,9 +128,36 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user?.consented_at || user.username_confirmed !== true) return undefined;
+
+    let active = true;
+    const refreshBadge = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const groups = await api.listGroups();
+        if (active) {
+          updateAppBadge(groups.reduce((total, group) => total + (group.unread_total_count || 0), 0));
+        }
+      } catch {
+        // Badge refresh is best-effort.
+      }
+    };
+
+    refreshBadge();
+    const interval = setInterval(refreshBadge, 30000);
+    document.addEventListener('visibilitychange', refreshBadge);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshBadge);
+    };
+  }, [user]);
+
   const handleLogout = () => {
     sessionStorage.removeItem(JOIN_STORAGE_KEY);
     api.clearSession();
+    updateAppBadge(0);
     setUser(null);
     setSelectedGroupId(null);
     setProfileMenuOpen(false);

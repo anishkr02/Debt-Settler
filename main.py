@@ -598,6 +598,16 @@ def get_unread_expense_and_member_counts(session: Session, membership: GroupMemb
     return unread_expense_count, unread_member_count
 
 
+def get_pending_confirmation_count(session: Session, membership: GroupMember) -> int:
+    return session.exec(
+        select(func.count(SettlementTransactionDB.id)).where(
+            SettlementTransactionDB.group_id == membership.group_id,
+            SettlementTransactionDB.to_member_id == membership.id,
+            SettlementTransactionDB.status == "paid_pending_confirmation"
+        )
+    ).one()
+
+
 @app.post("/groups")
 def create_group(
     payload: GroupCreate,
@@ -650,6 +660,7 @@ def list_my_groups(
             ).first())
             unread_chat_count = get_unread_chat_count(session, mem)
             unread_expense_count, unread_member_count = get_unread_expense_and_member_counts(session, mem)
+            pending_confirmation_count = get_pending_confirmation_count(session, mem)
             
             result.append({
                 "id": group.id,
@@ -663,7 +674,8 @@ def list_my_groups(
                 "unread_chat_count": unread_chat_count,
                 "unread_expense_count": unread_expense_count,
                 "unread_member_count": unread_member_count,
-                "unread_total_count": unread_chat_count + unread_expense_count + unread_member_count
+                "pending_confirmation_count": pending_confirmation_count,
+                "unread_total_count": unread_chat_count + unread_expense_count + unread_member_count + pending_confirmation_count
             })
     return result
 
@@ -703,6 +715,7 @@ def get_group(
     ).all())
     unread_chat_count = get_unread_chat_count(session, me)
     unread_expense_count, unread_member_count = get_unread_expense_and_member_counts(session, me)
+    pending_confirmation_count = get_pending_confirmation_count(session, me)
 
     return {
         "id": group.id,
@@ -714,6 +727,7 @@ def get_group(
         "unread_chat_count": unread_chat_count,
         "unread_expense_count": unread_expense_count,
         "unread_member_count": unread_member_count,
+        "pending_confirmation_count": pending_confirmation_count,
         "members": members_data
     }
 

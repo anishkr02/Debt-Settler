@@ -579,6 +579,102 @@ def test_settlement_lifecycle_confirmation_and_freeze():
     assert g_final["is_frozen"] is True
 
 
+def test_pending_payment_confirmation_counts_in_group_and_list():
+    usernames = ("badge_owner", "badge_payer1", "badge_payer2")
+    for username in usernames:
+        assert client.post(
+            "/auth/signup",
+            json={"username": username, "email": f"{username}@example.com"}
+        ).status_code == 200
+
+    receiver_headers = {"X-Dev-Username": "badge_owner"}
+    group = client.post(
+        "/groups",
+        json={"name": "Payment Badge"},
+        headers=receiver_headers
+    ).json()
+    group_id = group["id"]
+    for payer in usernames[1:]:
+        assert client.post(
+            f"/groups/{group_id}/invite",
+            json={"method": "username", "username": payer},
+            headers=receiver_headers
+        ).status_code == 200
+
+    group_data = client.get(f"/groups/{group_id}", headers=receiver_headers).json()
+    member_ids = {member["name"]: member["id"] for member in group_data["members"]}
+    expense = client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Shared expense",
+            "total_amount": 100,
+            "paid_by": member_ids["badge_owner"],
+            "split_among": list(member_ids.values())
+        },
+        headers=receiver_headers
+    )
+    assert expense.status_code == 200
+
+    settlements = client.post(
+        f"/groups/{group_id}/settle",
+        headers=receiver_headers
+    ).json()["settlements"]
+    assert len(settlements) == 2
+    assert all(tx["to_member_id"] == member_ids["badge_owner"] for tx in settlements)
+
+    payer_headers_by_member = {
+        member_ids[username]: {"X-Dev-Username": username}
+        for username in usernames[1:]
+    }
+    assert client.post(
+        f"/settlements/{settlements[0]['id']}/mark-paid",
+        headers=payer_headers_by_member[settlements[0]["from_member_id"]]
+    ).status_code == 200
+
+    detail = client.get(f"/groups/{group_id}", headers=receiver_headers).json()
+    listed = next(
+        group for group in client.get("/groups", headers=receiver_headers).json()
+        if group["id"] == group_id
+    )
+    assert detail["pending_confirmation_count"] == 1
+    assert listed["pending_confirmation_count"] == 1
+    assert listed["unread_total_count"] == (
+        listed["unread_chat_count"]
+        + listed["unread_expense_count"]
+        + listed["unread_member_count"]
+        + 1
+    )
+
+    first_payer = settlements[0]["from_member_id"]
+    assert client.get(
+        f"/groups/{group_id}",
+        headers=payer_headers_by_member[first_payer]
+    ).json()["pending_confirmation_count"] == 0
+
+    assert client.post(
+        f"/settlements/{settlements[1]['id']}/mark-paid",
+        headers=payer_headers_by_member[settlements[1]["from_member_id"]]
+    ).status_code == 200
+    assert client.get(f"/groups/{group_id}", headers=receiver_headers).json()[
+        "pending_confirmation_count"
+    ] == 2
+
+    assert client.post(
+        f"/settlements/{settlements[0]['id']}/confirm",
+        headers=receiver_headers
+    ).status_code == 200
+    assert client.get(f"/groups/{group_id}", headers=receiver_headers).json()[
+        "pending_confirmation_count"
+    ] == 1
+    assert client.post(
+        f"/settlements/{settlements[1]['id']}/confirm",
+        headers=receiver_headers
+    ).status_code == 200
+    assert client.get(f"/groups/{group_id}", headers=receiver_headers).json()[
+        "pending_confirmation_count"
+    ] == 0
+
+
 def test_settlement_payload_uses_bare_link_without_receiver_upi():
     client.post("/auth/signup", json={"username": "bare_admin", "email": "bare_admin@example.com"})
     client.post("/auth/signup", json={"username": "bare_member", "email": "bare_member@example.com"})

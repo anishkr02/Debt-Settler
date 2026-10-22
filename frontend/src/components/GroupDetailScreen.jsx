@@ -56,7 +56,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (activeTab !== 'chat' && document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible') {
         fetchGroup();
       }
     }, 8000);
@@ -155,7 +155,10 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
             onClick={() => setShowSettleModal(true)}
             disabled={settleDisabled}
             title={settleHint || undefined}
-            className={`px-4 py-2 font-bold text-xs rounded-xl flex items-center gap-1.5 transition ${
+            aria-label={group.pending_confirmation_count > 0
+              ? `View payments, ${group.pending_confirmation_count} waiting for your confirmation`
+              : undefined}
+            className={`relative px-4 py-2 font-bold text-xs rounded-xl flex items-center gap-1.5 transition ${
               settleDisabled
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 :                 'bg-brand-600 hover:bg-brand-500 text-white shadow-sm active:scale-[0.98]'
@@ -163,6 +166,11 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
           >
             <Zap className="w-3.5 h-3.5 fill-current" />
             <span>{hasStarted ? 'View payments' : 'Settle Up'}</span>
+            {group.pending_confirmation_count > 0 && (
+              <span className="absolute -right-2 -top-2 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
+                {group.pending_confirmation_count > 99 ? '99+' : group.pending_confirmation_count}
+              </span>
+            )}
           </button>
         </div>
       </section>
