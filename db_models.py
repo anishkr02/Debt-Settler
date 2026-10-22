@@ -131,6 +131,7 @@ class ChatMessageDB(SQLModel, table=True):
     group_id: int = Field(foreign_key="group.id", index=True)
     sender_member_id: int = Field(foreign_key="groupmember.id", index=True)
     body: str
+    reply_to_id: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     group: Optional[Group] = Relationship(back_populates="messages")

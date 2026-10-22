@@ -224,6 +224,7 @@ class DebtCreate(BaseModel):
 
 class ChatCreate(BaseModel):
     body: str
+    reply_to_id: Optional[int] = None
 
 
 class SeenSection(BaseModel):
@@ -1265,10 +1266,26 @@ def send_chat_message(
     if len(payload.body.strip()) > 2000:
         raise HTTPException(400, "Message is too long (max 2000 characters)")
 
+    reply_to = None
+    if payload.reply_to_id is not None:
+        original = session.get(ChatMessageDB, payload.reply_to_id)
+        if original is None or original.group_id != group_id:
+            raise HTTPException(status_code=400, detail="Cannot reply to that message")
+        original_member = session.get(GroupMember, original.sender_member_id)
+        original_user = session.get(User, original_member.user_id) if original_member and original_member.user_id else None
+        original_username = original_user.username if original_user else "Unknown"
+        original_body = original.body
+        reply_to = {
+            "id": original.id,
+            "sender_username": original_username,
+            "body": original_body[:120] + "..." if len(original_body) > 120 else original_body
+        }
+
     msg = ChatMessageDB(
         group_id=group_id,
         sender_member_id=membership.id,
-        body=payload.body.strip()
+        body=payload.body.strip(),
+        reply_to_id=payload.reply_to_id
     )
     session.add(msg)
     session.commit()
@@ -1278,7 +1295,9 @@ def send_chat_message(
         "sender_member_id": msg.sender_member_id,
         "sender_username": current_user.username,
         "body": msg.body,
-        "created_at": msg.created_at
+        "created_at": msg.created_at,
+        "reply_to_id": msg.reply_to_id,
+        "reply_to": reply_to
     }
 
 
@@ -1297,12 +1316,30 @@ def get_chat_history(
     messages = session.exec(
         select(ChatMessageDB).where(ChatMessageDB.group_id == group_id).order_by(ChatMessageDB.created_at)
     ).all()
+    referenced_ids = {msg.reply_to_id for msg in messages if msg.reply_to_id is not None}
+    originals = session.exec(
+        select(ChatMessageDB).where(
+            ChatMessageDB.group_id == group_id,
+            ChatMessageDB.id.in_(referenced_ids)
+        )
+    ).all() if referenced_ids else []
+    original_by_id = {msg.id: msg for msg in originals}
 
     members = session.exec(select(GroupMember).where(GroupMember.group_id == group_id)).all()
     user_by_member = {}
     for m in members:
         u = session.get(User, m.user_id) if m.user_id else None
         user_by_member[m.id] = u.username if u else "Unknown"
+
+    def reply_data(reply_id):
+        original = original_by_id.get(reply_id)
+        if original is None:
+            return None
+        return {
+            "id": original.id,
+            "sender_username": user_by_member.get(original.sender_member_id, "Unknown"),
+            "body": original.body[:120] + "..." if len(original.body) > 120 else original.body
+        }
 
     return {
         "group_id": group_id,
@@ -1313,7 +1350,9 @@ def get_chat_history(
                 "sender_member_id": msg.sender_member_id,
                 "sender_username": user_by_member.get(msg.sender_member_id, "Unknown"),
                 "body": msg.body,
-                "created_at": msg.created_at
+                "created_at": msg.created_at,
+                "reply_to_id": msg.reply_to_id,
+                "reply_to": reply_data(msg.reply_to_id) if msg.reply_to_id is not None else None
             }
             for msg in messages
         ]

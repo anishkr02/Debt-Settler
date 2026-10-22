@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
-import { Send, Lock, MessageSquare, RefreshCw, AlertCircle } from 'lucide-react';
+import { Send, Lock, MessageSquare, RefreshCw, AlertCircle, Reply, X } from 'lucide-react';
 
 const IS_COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
 
@@ -11,9 +11,15 @@ export default function ChatTab({ group, currentUser, onRead }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const lastMarkedReadId = useRef(0);
+  const lastNewestMessageId = useRef(null);
+  const scrollAfterSend = useRef(false);
+  const nearBottom = useRef(false);
+  const highlightTimeout = useRef(null);
 
   const fetchChat = useCallback(async () => {
     try {
@@ -67,11 +73,30 @@ export default function ChatTab({ group, currentUser, onRead }) {
   }, [group.id]);
 
   useEffect(() => {
-    // Scroll to bottom on new messages
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (loading) return;
+    const newestMessageId = messages.reduce((newest, message) => Math.max(newest, message.id), 0);
+    const firstLoad = lastNewestMessageId.current === null;
+    const newestChanged = newestMessageId !== lastNewestMessageId.current;
+    lastNewestMessageId.current = newestMessageId;
+
+    if (firstLoad || scrollAfterSend.current || (newestChanged && nearBottom.current)) {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        nearBottom.current = true;
+      }
     }
-  }, [messages]);
+    scrollAfterSend.current = false;
+  }, [messages, loading]);
+
+  useEffect(() => () => clearTimeout(highlightTimeout.current), []);
+
+  const jumpToOriginal = (id) => {
+    if (!messages.some((message) => message.id === id)) return;
+    document.getElementById(`chat-msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightId(id);
+    clearTimeout(highlightTimeout.current);
+    highlightTimeout.current = setTimeout(() => setHighlightId(null), 1200);
+  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -79,7 +104,9 @@ export default function ChatTab({ group, currentUser, onRead }) {
     try {
       setSending(true);
       setError('');
-      await api.sendMessage(group.id, newMsg.trim());
+      await api.sendMessage(group.id, newMsg.trim(), replyTo ? replyTo.id : null);
+      scrollAfterSend.current = true;
+      setReplyTo(null);
       setNewMsg('');
       await fetchChat();
       if (textareaRef.current) {
@@ -129,7 +156,14 @@ export default function ChatTab({ group, currentUser, onRead }) {
       )}
 
       {/* Message Stream */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-cream-50/60 p-4 space-y-3">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          const element = e.currentTarget;
+          nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+        }}
+        className="flex-1 overflow-y-auto bg-cream-50/60 p-4 space-y-3"
+      >
         {loading && messages.length === 0 ? (
           <div className="py-12 text-center text-slate-400">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-600" />
@@ -146,19 +180,50 @@ export default function ChatTab({ group, currentUser, onRead }) {
             return (
               <div
                 key={m.id}
-                className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                id={`chat-msg-${m.id}`}
+                className={`group flex flex-col ${isMe ? 'items-end' : 'items-start'} ${
+                  highlightId === m.id ? 'rounded-xl ring-2 ring-brand-400 ring-offset-2 transition' : ''
+                }`}
               >
                 <span className="text-[10px] text-slate-400 font-semibold mb-0.5 px-1">
                   @{m.sender_username} • {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-xs font-medium shadow-sm whitespace-pre-wrap break-words ${
-                    isMe
-                      ? 'bg-brand-600 text-white rounded-tr-none'
-                      : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
-                  }`}
-                >
-                  {m.body}
+                <div className="flex items-end gap-1">
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-xs font-medium shadow-sm whitespace-pre-wrap break-words ${
+                      isMe
+                        ? 'bg-brand-600 text-white rounded-tr-none'
+                        : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
+                    }`}
+                  >
+                    {m.reply_to && (
+                      <button
+                        type="button"
+                        onClick={() => jumpToOriginal(m.reply_to.id)}
+                        className={`mb-2 block w-full rounded-lg border-l-2 border-brand-400 px-2 py-1 text-left ${
+                          isMe ? 'bg-brand-700/60 text-white' : 'bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <span className="block font-bold">@{m.reply_to.sender_username}</span>
+                        <span className="line-clamp-2">{m.reply_to.body}</span>
+                      </button>
+                    )}
+                    {m.body}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Reply"
+                    title="Reply"
+                    onClick={() => {
+                      setReplyTo(m);
+                      textareaRef.current?.focus();
+                    }}
+                    className={`min-h-0 h-7 w-7 rounded-full p-1 text-slate-500 hover:bg-slate-200 ${
+                      IS_COARSE_POINTER ? 'opacity-60' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+                    }`}
+                  >
+                    <Reply className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             );
@@ -176,6 +241,22 @@ export default function ChatTab({ group, currentUser, onRead }) {
         ) : (
           <form onSubmit={handleSendMessage} className="flex gap-2">
             <div className="min-w-0 flex-1">
+              {replyTo && (
+                <div className="mb-2 flex items-center justify-between gap-2 border-l-2 border-brand-500 bg-cream-50 px-2.5 py-1.5">
+                  <div className="min-w-0 text-xs">
+                    <p className="font-bold text-ink-900">Replying to @{replyTo.sender_username}</p>
+                    <p className="truncate text-slate-500">{replyTo.body}</p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Cancel reply"
+                    onClick={() => setReplyTo(null)}
+                    className="min-h-0 h-7 w-7 shrink-0 rounded-full p-1 text-slate-500 hover:bg-slate-200"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               <textarea
                 ref={textareaRef}
                 rows={1}
@@ -187,6 +268,9 @@ export default function ChatTab({ group, currentUser, onRead }) {
                   e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 120)}px`;
                 }}
                 onKeyDown={(e) => {
+                  if (e.key === 'Escape' && !IS_COARSE_POINTER && replyTo) {
+                    setReplyTo(null);
+                  }
                   if (e.key === 'Enter' && !e.shiftKey && !IS_COARSE_POINTER && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     handleSendMessage(e);

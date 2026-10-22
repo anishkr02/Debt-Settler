@@ -234,10 +234,13 @@ class ApiClient {
     return this.request(`/groups/${groupId}/chat`);
   }
 
-  async sendMessage(groupId, body) {
+  async sendMessage(groupId, body, replyToId = null) {
     return this.request(`/groups/${groupId}/chat`, {
       method: 'POST',
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({
+        body,
+        ...(replyToId !== null ? { reply_to_id: replyToId } : {}),
+      }),
     });
   }
 

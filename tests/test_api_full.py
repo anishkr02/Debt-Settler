@@ -732,6 +732,65 @@ def test_chat_rejects_messages_over_2000_characters():
     assert response.json()["detail"] == "Message is too long (max 2000 characters)"
 
 
+def test_chat_replies_are_embedded_and_original_text_is_truncated():
+    group_id, admin_headers, member_headers = _create_unread_chat_group("chat_reply")
+    original = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "original " * 20},
+        headers=member_headers
+    ).json()
+    plain = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "plain message"},
+        headers=admin_headers
+    ).json()
+    reply = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "reply", "reply_to_id": original["id"]},
+        headers=admin_headers
+    )
+
+    assert reply.status_code == 200
+    assert reply.json()["reply_to_id"] == original["id"]
+    assert reply.json()["reply_to"] == {
+        "id": original["id"],
+        "sender_username": "chat_reply_member",
+        "body": original["body"][:120] + "..."
+    }
+
+    history = client.get(f"/groups/{group_id}/chat", headers=admin_headers).json()["messages"]
+    assert history[1]["reply_to_id"] is None
+    assert history[1]["reply_to"] is None
+    assert history[2]["reply_to_id"] == original["id"]
+    assert history[2]["reply_to"]["sender_username"] == "chat_reply_member"
+    assert len(history[2]["reply_to"]["body"]) <= 123
+    assert history[2]["reply_to"]["body"].endswith("...")
+    assert plain["id"] == history[1]["id"]
+
+
+def test_chat_replies_reject_missing_or_other_group_messages():
+    group_id, admin_headers, _ = _create_unread_chat_group("replyscope")
+    other_group = client.post(
+        "/groups",
+        json={"name": "Other Chat Group"},
+        headers=admin_headers
+    ).json()
+    other_message = client.post(
+        f"/groups/{other_group['id']}/chat",
+        json={"body": "private to another group"},
+        headers=admin_headers
+    ).json()
+
+    for reply_to_id in (other_message["id"], 999999):
+        response = client.post(
+            f"/groups/{group_id}/chat",
+            json={"body": "invalid reply", "reply_to_id": reply_to_id},
+            headers=admin_headers
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Cannot reply to that message"
+
+
 def _create_unread_chat_group(group_name):
     admin_name = f"{group_name}_admin"
     member_name = f"{group_name}_member"
