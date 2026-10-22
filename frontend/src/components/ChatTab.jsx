@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { Send, Lock, MessageSquare, RefreshCw, AlertCircle } from 'lucide-react';
 
+const IS_COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
+
 export default function ChatTab({ group, currentUser, onRead }) {
   const [messages, setMessages] = useState([]);
   const [isReadOnly, setIsReadOnly] = useState(false);
@@ -10,6 +12,7 @@ export default function ChatTab({ group, currentUser, onRead }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
+  const textareaRef = useRef(null);
   const lastMarkedReadId = useRef(0);
 
   const fetchChat = useCallback(async () => {
@@ -79,6 +82,10 @@ export default function ChatTab({ group, currentUser, onRead }) {
       await api.sendMessage(group.id, newMsg.trim());
       setNewMsg('');
       await fetchChat();
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.focus();
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -145,7 +152,7 @@ export default function ChatTab({ group, currentUser, onRead }) {
                   @{m.sender_username} • {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
                 <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-xs font-medium shadow-sm ${
+                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-xs font-medium shadow-sm whitespace-pre-wrap break-words ${
                     isMe
                       ? 'bg-brand-600 text-white rounded-tr-none'
                       : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
@@ -168,21 +175,38 @@ export default function ChatTab({ group, currentUser, onRead }) {
           </div>
         ) : (
           <form onSubmit={handleSendMessage} className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Type message (e.g. 'Paid on GPay, please confirm!')..."
-              value={newMsg}
-              onChange={(e) => setNewMsg(e.target.value)}
-              disabled={sending}
-              className="min-h-[44px] min-w-0 flex-1 px-3.5 text-sm"
-            />
+            <div className="min-w-0 flex-1">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                placeholder="Type message (e.g. 'Paid on GPay, please confirm!')..."
+                value={newMsg}
+                onChange={(e) => {
+                  setNewMsg(e.target.value);
+                  e.currentTarget.style.height = 'auto';
+                  e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 120)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !IS_COARSE_POINTER && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    handleSendMessage(e);
+                  }
+                }}
+                disabled={sending}
+                className="min-h-[44px] max-h-[120px] w-full resize-none overflow-y-auto px-3.5 py-3 text-sm"
+              />
+              {!IS_COARSE_POINTER && (
+                <p className="pt-1 text-[10px] text-slate-400">Enter to send, Shift+Enter for a new line</p>
+              )}
+            </div>
             <button
               type="submit"
               disabled={sending || !newMsg.trim()}
               className="primary-btn shrink-0 px-4 text-xs"
+              aria-label={IS_COARSE_POINTER ? 'Send message' : undefined}
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Send</span>
+              {!IS_COARSE_POINTER && <span>Send</span>}
             </button>
           </form>
         )}

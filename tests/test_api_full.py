@@ -343,6 +343,42 @@ def test_member_upi_patch_is_self_scoped_and_validated():
     assert not_a_member.status_code == 403
 
 
+def test_member_upi_patch_accepts_mobile_number_and_rejects_invalid_numbers():
+    client.post("/auth/signup", json={"username": "mobile_admin", "email": "mobile_admin@example.com"})
+    group = client.post(
+        "/groups",
+        json={"name": "Mobile UPI Group"},
+        headers={"X-Dev-Username": "mobile_admin"}
+    ).json()
+    group_id = group["id"]
+    valid = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "9876543210"},
+        headers={"X-Dev-Username": "mobile_admin"}
+    )
+    assert valid.status_code == 200
+    assert valid.json()["upi_id"] == "9876543210"
+
+    for invalid_number in ("987654321", "98765432109", "5876543210", "abc1234567"):
+        response = client.patch(
+            f"/groups/{group_id}/members/me",
+            json={"upi_id": invalid_number},
+            headers={"X-Dev-Username": "mobile_admin"}
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == (
+            "Enter a valid UPI ID (like name@bank) or a 10-digit mobile number"
+        )
+
+    normal_upi = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "mobile_admin@okaxis"},
+        headers={"X-Dev-Username": "mobile_admin"}
+    )
+    assert normal_upi.status_code == 200
+    assert normal_upi.json()["upi_id"] == "mobile_admin@okaxis"
+
+
 def test_multi_payer_and_unequal_splits():
     # Setup Group with 3 members
     u1 = client.post("/auth/signup", json={"username": "m_alice", "email": "m_alice@example.com"}).json()
@@ -580,6 +616,65 @@ def test_settlement_payload_uses_bare_link_without_receiver_upi():
     assert len(settlements) == 1
     assert settlements[0]["to_upi_id"] is None
     assert settlements[0]["upi_link"] == "upi://pay"
+    assert settlements[0]["to_upi_is_number"] is False
+
+
+def test_settlement_payload_for_mobile_receiver_has_no_upi_link():
+    group_id, admin_headers, _ = _create_unread_chat_group("mobile_settle")
+    group = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    member_ids = {member["name"]: member["id"] for member in group["members"]}
+    receiver_upi = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "9876543210"},
+        headers=admin_headers
+    )
+    assert receiver_upi.status_code == 200
+    expense = client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Mobile settlement expense",
+            "total_amount": 100,
+            "paid_by": member_ids["mobile_settle_admin"],
+            "split_among": list(member_ids.values())
+        },
+        headers=admin_headers
+    )
+    assert expense.status_code == 200
+
+    settlements = client.post(f"/groups/{group_id}/settle", headers=admin_headers).json()["settlements"]
+    assert len(settlements) == 1
+    assert settlements[0]["to_upi_id"] == "9876543210"
+    assert settlements[0]["upi_link"] is None
+    assert settlements[0]["to_upi_is_number"] is True
+
+
+def test_settlement_payload_for_upi_id_keeps_link():
+    group_id, admin_headers, _ = _create_unread_chat_group("upi_settle")
+    group = client.get(f"/groups/{group_id}", headers=admin_headers).json()
+    member_ids = {member["name"]: member["id"] for member in group["members"]}
+    receiver_upi = client.patch(
+        f"/groups/{group_id}/members/me",
+        json={"upi_id": "upi_settle@okaxis"},
+        headers=admin_headers
+    )
+    assert receiver_upi.status_code == 200
+    expense = client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "UPI settlement expense",
+            "total_amount": 100,
+            "paid_by": member_ids["upi_settle_admin"],
+            "split_among": list(member_ids.values())
+        },
+        headers=admin_headers
+    )
+    assert expense.status_code == 200
+
+    settlements = client.post(f"/groups/{group_id}/settle", headers=admin_headers).json()["settlements"]
+    assert len(settlements) == 1
+    assert settlements[0]["to_upi_id"] == "upi_settle@okaxis"
+    assert settlements[0]["upi_link"].startswith("upi://pay?pa=upi_settle%40okaxis&")
+    assert settlements[0]["to_upi_is_number"] is False
 
 
 def test_group_chat_and_retention():
@@ -624,6 +719,17 @@ def test_group_chat_and_retention():
         assert session.get(Group, g_id) is None
         # Verify messages are cleaned up
         assert len(session.exec(select(ChatMessageDB).where(ChatMessageDB.group_id == g_id)).all()) == 0
+
+
+def test_chat_rejects_messages_over_2000_characters():
+    group_id, admin_headers, _ = _create_unread_chat_group("chat_length")
+    response = client.post(
+        f"/groups/{group_id}/chat",
+        json={"body": "x" * 2001},
+        headers=admin_headers
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Message is too long (max 2000 characters)"
 
 
 def _create_unread_chat_group(group_name):

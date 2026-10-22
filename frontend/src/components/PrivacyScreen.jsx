@@ -59,7 +59,7 @@ export default function PrivacyScreen({ onBack }) {
             <ul className="list-disc pl-5 text-xs space-y-1.5 text-slate-600">
               <li><strong>Email address:</strong> Used for secure authentication and group invitation matching.</li>
               <li><strong>Username:</strong> Displayed to group members to identify payers, debtors, and chat participants.</li>
-              <li><strong>UPI ID (VPA):</strong> Optional per group, provided by you so others can settle debts to you via one-tap UPI links.</li>
+              <li><strong>UPI ID or mobile number:</strong> Optional per group, provided by you so others can settle debts to you via UPI links or manual payment.</li>
               <li><strong>Expenses and Debts:</strong> Amounts, descriptions, payers, and split breakdowns within groups you join.</li>
               <li><strong>Chat Messages:</strong> Messages sent within group chat boards.</li>
             </ul>
@@ -69,11 +69,11 @@ export default function PrivacyScreen({ onBack }) {
           <div className="space-y-3 border-t border-slate-100 pt-5">
             <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
               <Eye className="w-4 h-4 text-brand-600" />
-              <h2>UPI ID visibility and purpose</h2>
+              <h2>UPI ID or mobile number visibility and purpose</h2>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
-              Your UPI ID is <strong>strictly visible only to fellow members of the specific groups you belong to</strong>.
-              It is shared solely so other members can generate direct UPI deep-links and scan QR codes to pay you back without any intermediary holding your funds. We never sell or share your UPI ID with third-party advertisers.
+              Your UPI ID or mobile number is <strong>strictly visible only to fellow members of the specific groups you belong to</strong>.
+              UPI IDs let other members generate direct payment links and QR codes. If you save a mobile number, it is shown only to members of your groups so they can pay you manually in any UPI app. We never sell or share these details with third-party advertisers.
             </p>
           </div>
 

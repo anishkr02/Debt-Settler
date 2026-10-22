@@ -167,6 +167,7 @@ class ConsentUpdate(BaseModel):
 # 3-20 chars, lowercase letters / digits / underscore only
 USERNAME_RE = re.compile(r'^[a-z0-9_]{3,20}$')
 UPI_ID_RE = re.compile(r'^[A-Za-z0-9._-]{2,64}@[A-Za-z][A-Za-z0-9]{1,63}$')
+UPI_MOBILE_RE = re.compile(r'^[6-9][0-9]{9}$')
 
 
 def normalize_username(raw: str) -> str:
@@ -725,8 +726,13 @@ def update_my_group_member(
 ):
     """Updates the authenticated user's UPI ID for this group."""
     membership = get_group_membership(group_id, current_user, session)
-    if payload.upi_id not in (None, "") and not UPI_ID_RE.fullmatch(payload.upi_id):
-        raise HTTPException(status_code=422, detail="Invalid UPI ID format")
+    if payload.upi_id not in (None, "") and not (
+        UPI_ID_RE.fullmatch(payload.upi_id) or UPI_MOBILE_RE.fullmatch(payload.upi_id)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Enter a valid UPI ID (like name@bank) or a 10-digit mobile number"
+        )
 
     membership.upi_id = payload.upi_id or None
     session.add(membership)
@@ -1076,7 +1082,8 @@ def get_settlements(
 
         to_upi_id = to_m.upi_id if to_m else None
         algo_member = AlgoMember(id=str(to_m.id) if to_m else str(s.to_member_id), name=to_name, upi_id=to_upi_id)
-        upi_link = build_upi_link(algo_member, s.amount, note="Debt Settlement")
+        to_upi_is_number = bool(to_upi_id and UPI_MOBILE_RE.fullmatch(to_upi_id))
+        upi_link = None if to_upi_is_number else build_upi_link(algo_member, s.amount, note="Debt Settlement")
 
         result.append({
             "id": s.id,
@@ -1088,6 +1095,7 @@ def get_settlements(
             "status": s.status,
             "algorithm_used": s.algorithm_used,
             "to_upi_id": to_upi_id,
+            "to_upi_is_number": to_upi_is_number,
             "upi_link": upi_link,
             "paid_at": s.paid_at,
             "confirmed_at": s.confirmed_at
@@ -1253,6 +1261,9 @@ def send_chat_message(
 
     if not payload.body.strip():
         raise HTTPException(400, "Message body cannot be empty")
+
+    if len(payload.body.strip()) > 2000:
+        raise HTTPException(400, "Message is too long (max 2000 characters)")
 
     msg = ChatMessageDB(
         group_id=group_id,

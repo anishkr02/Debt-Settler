@@ -5,6 +5,7 @@ import InvitePanel from './InvitePanel';
 import { buildJoinUrl } from '../lib/joinLink';
 
 const UPI_REGEX = /^[A-Za-z0-9._-]{2,64}@[A-Za-z][A-Za-z0-9]{1,63}$/;
+const MOBILE_REGEX = /^[6-9][0-9]{9}$/;
 
 export default function MembersTab({ group, currentUser, onMemberUpdated }) {
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -53,8 +54,8 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
 
   const handleSaveUpi = async () => {
     const trimmed = upiInput.trim();
-    if (trimmed && !UPI_REGEX.test(trimmed)) {
-      setUpiError('Invalid UPI ID format. Use 2-64 letters, numbers, dots, underscores, or hyphens, followed by @ and a valid handle (e.g. name@okaxis).');
+    if (trimmed && !UPI_REGEX.test(trimmed) && !MOBILE_REGEX.test(trimmed)) {
+      setUpiError('Enter a valid UPI ID (like name@okaxis) or a 10-digit mobile number');
       return;
     }
 
@@ -63,10 +64,10 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
     try {
       await api.updateMyMemberUpi(group.id, trimmed || null);
       setIsEditingUpi(false);
-      setSuccessMsg(trimmed ? 'UPI ID updated successfully!' : 'UPI ID cleared successfully!');
+      setSuccessMsg(trimmed ? 'UPI ID or mobile number updated successfully!' : 'UPI ID or mobile number cleared successfully!');
       if (onMemberUpdated) onMemberUpdated();
     } catch (err) {
-      setUpiError(err.message || 'Failed to update UPI ID');
+      setUpiError(err.message || 'Failed to update UPI ID or mobile number');
     } finally {
       setUpiSaving(false);
     }
@@ -79,7 +80,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
         <div>
           <p className="eyebrow mb-1">DEBT-SETTLE</p>
           <h2 className="text-lg font-bold text-ink-900">Group Members</h2>
-          <p className="text-xs text-slate-500 font-medium">Manage members, UPI payment handles, and group invites.</p>
+          <p className="text-xs text-slate-500 font-medium">Manage members, UPI IDs or mobile numbers, and group invites.</p>
         </div>
 
         <button
@@ -145,7 +146,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                     <div className="flex items-center gap-1.5">
                       <input
                         type="text"
-                        placeholder="yourname@okaxis"
+                        placeholder="name@okaxis or 9876543210"
                         value={upiInput}
                         onChange={(e) => setUpiInput(e.target.value)}
                         disabled={upiSaving}
@@ -156,7 +157,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                         onClick={handleSaveUpi}
                         disabled={upiSaving}
                         className="min-h-[44px] rounded-xl bg-brand-600 px-3 text-xs font-bold text-white transition hover:bg-brand-700 disabled:opacity-50"
-                        title="Save UPI"
+                        title="Save UPI ID or mobile number"
                       >
                         {upiSaving ? 'Saving...' : 'Save'}
                       </button>
@@ -184,11 +185,11 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                   <div className="flex items-center sm:justify-end gap-2">
                     {m.upi_id ? (
                       <div className="inline-flex items-center gap-1.5 bg-cream-50 border border-slate-200 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700">
-                        <span className="text-[10px] uppercase font-bold text-slate-400">UPI:</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400">UPI ID or mobile number:</span>
                         <span className="text-brand-800">{m.upi_id}</span>
                       </div>
                     ) : (
-                      <span className="text-xs text-slate-400 italic">No UPI handle set</span>
+                      <span className="text-xs text-slate-400 italic">No UPI ID or number set</span>
                     )}
 
                     {/* Inline edit control on own row */}
@@ -197,7 +198,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
                         type="button"
                         onClick={() => handleStartEditUpi(m.upi_id)}
                         className="p-1.5 text-slate-400 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition border border-transparent hover:border-brand-200"
-                        title={m.upi_id ? 'Edit your UPI ID' : 'Add your UPI ID'}
+                        title={m.upi_id ? 'Edit your UPI ID or mobile number' : 'Add your UPI ID or mobile number'}
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>

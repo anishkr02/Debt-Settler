@@ -163,7 +163,7 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
             >
               Privacy Policy
             </a>
-            , including storage of my details and making my UPI ID visible to members of groups I join.
+            , including storage of my details and making my UPI ID or mobile number visible to members of groups I join.
           </label>
         </div>
 

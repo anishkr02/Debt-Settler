@@ -265,14 +265,16 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                     {hasToUpi ? (
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-cream-50 p-2.5 text-xs">
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pay to UPI:</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            {tx.to_upi_is_number ? 'Pay to mobile number:' : 'Pay to UPI:'}
+                          </span>
                           <span className="font-mono font-bold text-brand-800">{tx.to_upi_id}</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => handleCopyUpi(tx.id, tx.to_upi_id)}
                           className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 transition hover:text-slate-900 active:scale-95"
-                          title="Copy UPI ID"
+                          title={tx.to_upi_is_number ? 'Copy mobile number' : 'Copy UPI ID'}
                         >
                           {copiedUpiTxId === tx.id ? (
                             <>
@@ -286,6 +288,11 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
                             </>
                           )}
                         </button>
+                        {tx.to_upi_is_number && (
+                          <p className="basis-full text-[11px] text-slate-500">
+                            No one-tap link for mobile numbers. Open any UPI app, pay to this number, then tap Mark as paid.
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-800">

@@ -46,7 +46,7 @@ export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy 
           <p className="font-semibold text-slate-800">In summary:</p>
           <ul className="list-disc pl-4 space-y-1.5 text-slate-600">
             <li>We store your email, username, group expenses, debts, and chat messages.</li>
-            <li>Your UPI ID is visible only to members of groups you join, strictly for payment settlements.</li>
+            <li>Your UPI ID or mobile number is visible only to members of groups you join, strictly for payment settlements.</li>
             <li>Settled groups are permanently deleted 7 days after all balances are settled.</li>
             <li>You can delete your account at any time once unsettled debts are cleared.</li>
           </ul>
