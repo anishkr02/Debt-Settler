@@ -1,3 +1,5 @@
+import { getFreshIdToken } from './firebase';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 class ApiClient {
@@ -40,12 +42,33 @@ class ApiClient {
     return headers;
   }
 
-  async request(endpoint, options = {}) {
+  async request(endpoint, options = {}, retried = false) {
+    if (!this.devUsername && this.token) {
+      try {
+        const fresh = await getFreshIdToken();
+        if (fresh && fresh !== this.token) {
+          this.token = fresh;
+          localStorage.setItem('debt_settle_token', fresh);
+        }
+      } catch {
+        // Keep using the stored token if Firebase cannot refresh right now.
+      }
+    }
+
     const url = `${API_BASE_URL}${endpoint}`;
     const headers = { ...this.getHeaders(), ...(options.headers || {}) };
     const response = await fetch(url, { ...options, headers });
     
     if (!response.ok) {
+      if (response.status === 401 && !retried && !this.devUsername) {
+        const fresh = await getFreshIdToken(true);
+        if (fresh) {
+          this.token = fresh;
+          localStorage.setItem('debt_settle_token', fresh);
+          return this.request(endpoint, options, true);
+        }
+      }
+
       let errorMsg = `HTTP Error ${response.status}`;
       try {
         const errData = await response.json();
@@ -53,7 +76,9 @@ class ApiClient {
       } catch {
         // ignore json parse error
       }
-      throw new Error(errorMsg);
+      const err = new Error(errorMsg);
+      err.status = response.status;
+      throw err;
     }
 
     return response.json();

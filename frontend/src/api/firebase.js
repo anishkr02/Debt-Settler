@@ -22,3 +22,10 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
 }
 
 export { auth, googleProvider, signInWithPopup };
+
+export async function getFreshIdToken(forceRefresh = false) {
+  if (!auth) return null;
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  return user ? user.getIdToken(forceRefresh) : null;
+}

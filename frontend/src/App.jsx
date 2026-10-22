@@ -98,14 +98,33 @@ export default function App() {
 
   // Session validation
   useEffect(() => {
+    let active = true;
+    let retryTimeout;
+
     if (api.currentUser) {
-      api.getMe()
-        .then((userData) => setUser(userData))
-        .catch(() => {
-          api.clearSession();
-          setUser(null);
-        });
+      const validateSession = async (retryCount = 0) => {
+        try {
+          const userData = await api.getMe();
+          if (active) setUser(userData);
+        } catch (err) {
+          if (!active) return;
+          if (err.status === 401) {
+            api.clearSession();
+            setUser(null);
+          } else if (retryCount < 3) {
+            retryTimeout = setTimeout(() => validateSession(retryCount + 1), 5000);
+          } else {
+            console.warn('Session validation failed; keeping the current session:', err);
+          }
+        }
+      };
+      validateSession();
     }
+
+    return () => {
+      active = false;
+      clearTimeout(retryTimeout);
+    };
   }, []);
 
   const handleLogout = () => {
