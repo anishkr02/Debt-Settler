@@ -196,6 +196,9 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
             <button
               key={id}
               onClick={() => setActiveTab(id)}
+              aria-label={activeTab !== id && unreadCount > 0 ? `${label}, ${unreadCount} unread` : label}
+              title={label}
+              aria-current={activeTab === id ? 'page' : undefined}
               className={`relative flex items-center justify-center gap-2 py-2.5 rounded-xl transition ${
                 activeTab === id
                   ? 'bg-white text-ink-900 shadow-sm'
@@ -205,7 +208,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
               <span className="relative">
                 <Icon className="w-4 h-4" />
                 {activeTab !== id && unreadCount > 0 && (
-                  <span className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                  <span aria-hidden="true" className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}

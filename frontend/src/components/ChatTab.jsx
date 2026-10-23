@@ -260,7 +260,8 @@ export default function ChatTab({ group, currentUser, onRead }) {
               <textarea
                 ref={textareaRef}
                 rows={1}
-                placeholder="Type message (e.g. 'Paid on GPay, please confirm!')..."
+                placeholder={IS_COARSE_POINTER ? 'Message' : "Type a message (e.g. 'Paid on GPay, please confirm!')"}
+                aria-label="Message"
                 value={newMsg}
                 onChange={(e) => {
                   setNewMsg(e.target.value);
