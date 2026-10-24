@@ -194,6 +194,10 @@ class GroupCreate(BaseModel):
     admin_upi_id: Optional[str] = None
 
 
+class GroupRename(BaseModel):
+    name: str
+
+
 class InviteCreate(BaseModel):
     method: str  # email | join_link | username
     email: Optional[EmailStr] = None
@@ -732,6 +736,30 @@ def get_group(
     }
 
 
+@app.patch("/groups/{group_id}")
+@limiter.limit("20/minute")
+def rename_group(
+    group_id: int,
+    payload: GroupRename,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    require_group_admin(group_id, current_user, session)
+    group = session.get(Group, group_id)
+    if not group:
+        raise HTTPException(404, "Group not found")
+
+    name = payload.name.strip()
+    if not name or len(name) > 50:
+        raise HTTPException(400, "Group name must be 1 to 50 characters")
+
+    group.name = name
+    session.add(group)
+    session.commit()
+    return {"id": group.id, "name": group.name}
+
+
 @app.patch("/groups/{group_id}/members/me")
 def update_my_group_member(
     group_id: int,
@@ -943,7 +971,16 @@ def list_expenses(
 ):
     """List all logged expenses for a group."""
     get_group_membership(group_id, current_user, session)
-    expenses = session.exec(select(ExpenseDB).where(ExpenseDB.group_id == group_id)).all()
+    expenses = session.exec(
+        select(ExpenseDB)
+        .where(ExpenseDB.group_id == group_id)
+        .order_by(ExpenseDB.created_at, ExpenseDB.id)
+    ).all()
+    user_by_member = dict(session.exec(
+        select(GroupMember.id, User.username)
+        .join(User, GroupMember.user_id == User.id)
+        .where(GroupMember.group_id == group_id)
+    ).all())
     result = []
     for e in expenses:
         payers = session.exec(select(ExpensePayerDB).where(ExpensePayerDB.expense_id == e.id)).all()
@@ -954,6 +991,8 @@ def list_expenses(
             "total_amount": e.total_amount,
             "split_type": e.split_type,
             "created_at": e.created_at,
+            "created_by_member_id": e.created_by_member_id,
+            "created_by_username": user_by_member.get(e.created_by_member_id),
             "payers": [{"member_id": p.member_id, "amount_paid": p.amount_paid} for p in payers],
             "splits": [{"member_id": s.member_id, "share_amount": s.share_amount} for s in splits],
         })

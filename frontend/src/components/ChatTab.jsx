@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { Send, Lock, MessageSquare, RefreshCw, AlertCircle, Reply, X } from 'lucide-react';
+import { formatTime } from '../lib/dates';
 
 const IS_COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
 
@@ -186,7 +187,7 @@ export default function ChatTab({ group, currentUser, onRead }) {
                 }`}
               >
                 <span className="text-[10px] text-slate-400 font-semibold mb-0.5 px-1">
-                  @{m.sender_username} • {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  @{m.sender_username} • {formatTime(m.created_at)}
                 </span>
                 <div className="flex items-end gap-1">
                   <div

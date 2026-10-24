@@ -136,6 +136,13 @@ class ApiClient {
     return this.request(`/groups/${id}`);
   }
 
+  async renameGroup(groupId, name) {
+    return this.request(`/groups/${groupId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    });
+  }
+
   async markSeen(groupId, section) {
     return this.request(`/groups/${groupId}/seen`, {
       method: 'POST',

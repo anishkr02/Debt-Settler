@@ -7,7 +7,7 @@ import ChatTab from './ChatTab';
 import SettleModal from './SettleModal';
 import { 
   ArrowLeft, Users, Receipt, Scale, MessageSquare, Zap, 
-  Shield, CheckCircle2, Lock, RefreshCw, AlertCircle 
+  Shield, CheckCircle2, Lock, RefreshCw, AlertCircle, Pencil, Check, X
 } from 'lucide-react';
 
 export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
@@ -17,6 +17,10 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [renameError, setRenameError] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   const fetchGroup = useCallback(async () => {
     try {
@@ -31,6 +35,23 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
       setLoading(false);
     }
   }, [groupId]);
+
+  const handleRenameGroup = async () => {
+    const trimmedName = nameDraft.trim();
+    if (!trimmedName || trimmedName === group.name.trim() || renaming) return;
+
+    try {
+      setRenaming(true);
+      setRenameError('');
+      await api.renameGroup(group.id, trimmedName);
+      setEditingName(false);
+      await fetchGroup();
+    } catch (err) {
+      setRenameError(err.message);
+    } finally {
+      setRenaming(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -126,13 +147,80 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
           <div>
             <p className="eyebrow mb-1 text-brand-300">DEBT-SETTLE</p>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">{group.name}</h1>
+              {editingName ? (
+                <>
+                  <input
+                    autoFocus
+                    maxLength={50}
+                    value={nameDraft}
+                    onChange={(event) => setNameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleRenameGroup();
+                      } else if (event.key === 'Escape') {
+                        setEditingName(false);
+                        setRenameError('');
+                      }
+                    }}
+                    className="min-h-0 h-8 w-full max-w-xs rounded-lg border border-white/20 bg-white/10 px-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-brand-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRenameGroup}
+                    disabled={
+                      renaming ||
+                      !nameDraft.trim() ||
+                      nameDraft.trim() === group.name.trim()
+                    }
+                    className="min-h-0 h-8 w-8 rounded-lg border border-white/20 text-slate-200 hover:bg-white/10 hover:text-white disabled:opacity-50"
+                    aria-label="Save group name"
+                    title="Save"
+                  >
+                    <Check className="mx-auto h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingName(false);
+                      setRenameError('');
+                    }}
+                    className="min-h-0 h-8 w-8 rounded-lg border border-white/20 text-slate-200 hover:bg-white/10 hover:text-white"
+                    aria-label="Cancel rename"
+                    title="Cancel"
+                  >
+                    <X className="mx-auto h-4 w-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h1 className="text-xl font-black tracking-tight text-white sm:text-2xl">{group.name}</h1>
+                  {group.is_admin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNameDraft(group.name);
+                        setRenameError('');
+                        setEditingName(true);
+                      }}
+                      className="min-h-0 h-7 w-7 rounded-md text-slate-200 hover:bg-white/10 hover:text-white"
+                      aria-label="Rename group"
+                      title="Rename group"
+                    >
+                      <Pencil className="mx-auto h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </>
+              )}
               {group.is_admin && (
                 <span className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full border border-amber-200">
                   <Shield className="w-2.5 h-2.5" /> Admin
                 </span>
               )}
             </div>
+            {renameError && (
+              <p className="mt-1 text-xs text-red-300">{renameError}</p>
+            )}
             <p className="text-xs font-medium text-slate-300">
               {group.members.length} {group.members.length === 1 ? 'member' : 'members'}
             </p>

@@ -1,12 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 import { Plus, Receipt, AlertCircle, RefreshCw, Lock } from 'lucide-react';
+import { formatDateTime, parseServerDate } from '../lib/dates';
 
 export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
   const myMember = group.members.find((m) => m.name === currentUser?.username);
   const defaultPayerId = myMember ? myMember.id : (group.members[0]?.id || '');
 
   const [expenses, setExpenses] = useState([]);
+  const [sortOrder, setSortOrder] = useState(() => {
+    try {
+      const savedOrder = localStorage.getItem('debt_settle_expense_sort');
+      return savedOrder === 'oldest' ? 'oldest' : 'newest';
+    } catch {
+      return 'newest';
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -33,6 +42,24 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
   const [iouNote, setIouNote] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('debt_settle_expense_sort', sortOrder);
+    } catch {
+      // Sorting remains available for this session if storage is unavailable.
+    }
+  }, [sortOrder]);
+
+  const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => {
+    const timeDifference = parseServerDate(a.created_at).getTime()
+      - parseServerDate(b.created_at).getTime();
+    const idDifference = a.id - b.id;
+    const chronologicalDifference = Number.isNaN(timeDifference) || timeDifference === 0
+      ? idDifference
+      : timeDifference;
+    return sortOrder === 'newest' ? -chronologicalDifference : chronologicalDifference;
+  }), [expenses, sortOrder]);
 
   const fetchExpenses = useCallback(async () => {
     try {
@@ -246,7 +273,30 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {expenses.map((e) => (
+          {expenses.length >= 2 && (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-semibold text-slate-500">Sort by</span>
+              {[
+                { id: 'newest', label: 'Newest first' },
+                { id: 'oldest', label: 'Oldest first' },
+              ].map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={sortOrder === id}
+                  onClick={() => setSortOrder(id)}
+                  className={`min-h-0 h-8 px-3 rounded-full border font-semibold transition ${
+                    sortOrder === id
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : 'border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {sortedExpenses.map((e) => (
             <div
               key={e.id}
               className="content-card space-y-3 transition hover:border-slate-300"
@@ -255,9 +305,14 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
                 <div>
                   <h4 className="font-bold text-sm text-slate-900">{e.description}</h4>
                   <p className="text-[11px] text-slate-400">
-                    {new Date(e.created_at).toLocaleDateString()} • Split:{' '}
+                    {formatDateTime(e.created_at)} • Split:{' '}
                     <span className="capitalize font-semibold text-slate-600">{e.split_type}</span>
                   </p>
+                  {e.created_by_username && (
+                    <p className="text-[11px] text-slate-500">
+                      Added by @{e.created_by_username}
+                    </p>
+                  )}
                 </div>
                 <span className="text-base font-black text-slate-900">₹{e.total_amount.toFixed(2)}</span>
               </div>

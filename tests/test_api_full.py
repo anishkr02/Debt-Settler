@@ -1715,3 +1715,125 @@ def test_group_list_includes_total_unread_count():
     assert item["unread_total_count"] == (
         item["unread_chat_count"] + item["unread_expense_count"] + item["unread_member_count"]
     )
+
+
+def test_group_rename_is_admin_only_and_updates_group_lists():
+    admin_headers = _dev_user("rename_admin")
+    member_headers = _dev_user("rename_member")
+    outsider_headers = _dev_user("rename_outsider")
+    group_id = client.post(
+        "/groups", json={"name": "Before"}, headers=admin_headers
+    ).json()["id"]
+    client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "rename_member"},
+        headers=admin_headers
+    )
+
+    renamed = client.patch(
+        f"/groups/{group_id}",
+        json={"name": "  After  "},
+        headers=admin_headers
+    )
+    assert renamed.status_code == 200
+    assert renamed.json() == {"id": group_id, "name": "After"}
+    assert next(
+        group for group in client.get("/groups", headers=admin_headers).json()
+        if group["id"] == group_id
+    )["name"] == "After"
+    assert client.get(
+        f"/groups/{group_id}", headers=member_headers
+    ).json()["name"] == "After"
+
+    assert client.patch(
+        f"/groups/{group_id}", json={"name": "Member name"}, headers=member_headers
+    ).status_code == 403
+    assert client.patch(
+        f"/groups/{group_id}", json={"name": "Outsider name"}, headers=outsider_headers
+    ).status_code == 403
+
+    for invalid_name in ("", "   ", "x" * 51):
+        response = client.patch(
+            f"/groups/{group_id}", json={"name": invalid_name}, headers=admin_headers
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Group name must be 1 to 50 characters"
+
+
+def test_expense_list_includes_creator_usernames_and_stable_order():
+    admin_headers = _dev_user("creator_admin")
+    member_headers = _dev_user("creator_member")
+    group_id = client.post(
+        "/groups", json={"name": "Creator test"}, headers=admin_headers
+    ).json()["id"]
+    client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "creator_member"},
+        headers=admin_headers
+    )
+    members = client.get(f"/groups/{group_id}", headers=admin_headers).json()["members"]
+    member_ids = {member["name"]: member["id"] for member in members}
+
+    equal_expense = client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Equal expense",
+            "total_amount": 20,
+            "paid_by": member_ids["creator_admin"],
+            "split_among": list(member_ids.values())
+        },
+        headers=admin_headers
+    )
+    assert equal_expense.status_code == 200
+
+    general_expense = client.post(
+        f"/groups/{group_id}/expenses",
+        json={
+            "description": "General expense",
+            "total_amount": 30,
+            "split_type": "equal",
+            "paid_by": [{"member_id": member_ids["creator_member"], "amount_paid": 30}],
+            "split_among": [
+                {"member_id": member_id} for member_id in member_ids.values()
+            ]
+        },
+        headers=member_headers
+    )
+    assert general_expense.status_code == 200
+
+    shared_time = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    with Session(test_engine) as session:
+        equal_row = session.exec(
+            select(ExpenseDB).where(ExpenseDB.description == "Equal expense")
+        ).one()
+        general_row = session.exec(
+            select(ExpenseDB).where(ExpenseDB.description == "General expense")
+        ).one()
+        equal_row.created_at = shared_time
+        general_row.created_at = shared_time
+        legacy_row = ExpenseDB(
+            group_id=group_id,
+            description="Legacy expense",
+            total_amount=5,
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc)
+        )
+        session.add(legacy_row)
+        session.commit()
+        session.refresh(legacy_row)
+        expected_order = [
+            legacy_row.id,
+            *sorted([equal_row.id, general_row.id])
+        ]
+        session.commit()
+
+    expenses = client.get(
+        f"/groups/{group_id}/expenses", headers=admin_headers
+    ).json()
+    assert [expense["id"] for expense in expenses] == expected_order
+    expenses_by_description = {
+        expense["description"]: expense for expense in expenses
+    }
+    assert expenses_by_description["Equal expense"]["created_by_username"] == "creator_admin"
+    assert expenses_by_description["General expense"]["created_by_username"] == "creator_member"
+    assert expenses_by_description["Legacy expense"]["created_by_member_id"] is None
+    assert expenses_by_description["Legacy expense"]["created_by_username"] is None
