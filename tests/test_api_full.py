@@ -1966,3 +1966,169 @@ def test_expense_list_includes_creator_usernames_and_stable_order():
     assert expenses_by_description["General expense"]["created_by_username"] == "creator_member"
     assert expenses_by_description["Legacy expense"]["created_by_member_id"] is None
     assert expenses_by_description["Legacy expense"]["created_by_username"] is None
+
+
+def test_financial_member_ids_must_belong_to_the_requested_group():
+    admin_a = _dev_user("validation_admin_a")
+    _dev_user("validation_member_a")
+    admin_b = _dev_user("validation_admin_b")
+    group_a = client.post(
+        "/groups", json={"name": "Validation A"}, headers=admin_a
+    ).json()["id"]
+    group_b = client.post(
+        "/groups", json={"name": "Validation B"}, headers=admin_b
+    ).json()["id"]
+    client.post(
+        f"/groups/{group_a}/invite",
+        json={"method": "username", "username": "validation_member_a"},
+        headers=admin_a
+    )
+    group_a_members = client.get(f"/groups/{group_a}", headers=admin_a).json()["members"]
+    group_b_members = client.get(f"/groups/{group_b}", headers=admin_b).json()["members"]
+    member_ids_a = {member["name"]: member["id"] for member in group_a_members}
+    member_id_b = group_b_members[0]["id"]
+    admin_id_a = member_ids_a["validation_admin_a"]
+    member_id_a = member_ids_a["validation_member_a"]
+
+    rejected_requests = [
+        (
+            f"/groups/{group_a}/expenses/equal",
+            {
+                "description": "External equal payer",
+                "total_amount": 10,
+                "paid_by": member_id_b,
+                "split_among": [admin_id_a]
+            }
+        ),
+        (
+            f"/groups/{group_a}/expenses/equal",
+            {
+                "description": "External equal split",
+                "total_amount": 10,
+                "paid_by": admin_id_a,
+                "split_among": [member_id_b]
+            }
+        ),
+        (
+            f"/groups/{group_a}/expenses",
+            {
+                "description": "External general payer",
+                "total_amount": 10,
+                "split_type": "equal",
+                "paid_by": [{"member_id": member_id_b, "amount_paid": 10}],
+                "split_among": [{"member_id": admin_id_a}]
+            }
+        ),
+        (
+            f"/groups/{group_a}/expenses",
+            {
+                "description": "External general split",
+                "total_amount": 10,
+                "split_type": "equal",
+                "paid_by": [{"member_id": admin_id_a, "amount_paid": 10}],
+                "split_among": [{"member_id": member_id_b}]
+            }
+        ),
+        (
+            f"/groups/{group_a}/debts",
+            {
+                "from_member_id": member_id_b,
+                "to_member_id": admin_id_a,
+                "amount": 5
+            }
+        ),
+        (
+            f"/groups/{group_a}/debts",
+            {
+                "from_member_id": admin_id_a,
+                "to_member_id": member_id_b,
+                "amount": 5
+            }
+        ),
+    ]
+    for endpoint, payload in rejected_requests:
+        response = client.post(endpoint, json=payload, headers=admin_a)
+        assert response.status_code == 400
+        assert response.json()["detail"] == "One or more members do not belong to this group"
+
+    with Session(test_engine) as session:
+        inactive_member = session.get(GroupMember, member_id_a)
+        inactive_member.active = False
+        session.add(inactive_member)
+        session.commit()
+
+    inactive_split = client.post(
+        f"/groups/{group_a}/expenses/equal",
+        json={
+            "description": "Inactive split member",
+            "total_amount": 10,
+            "paid_by": admin_id_a,
+            "split_among": [member_id_a]
+        },
+        headers=admin_a
+    )
+    assert inactive_split.status_code == 400
+    assert inactive_split.json()["detail"] == "One or more members do not belong to this group"
+
+    with Session(test_engine) as session:
+        assert session.exec(select(ExpenseDB).where(ExpenseDB.group_id == group_a)).all() == []
+        assert session.exec(select(ExpensePayerDB)).all() == []
+        assert session.exec(select(ExpenseSplitDB)).all() == []
+        assert session.exec(select(PersonalDebtDB).where(PersonalDebtDB.group_id == group_a)).all() == []
+
+
+def test_retention_rejects_days_below_one_without_deleting_groups(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "RETENTION_ADMIN_KEY", "test-retention-key")
+    with Session(test_engine) as session:
+        group = Group(
+            name="Recently settled",
+            fully_settled_at=datetime.now(timezone.utc)
+        )
+        session.add(group)
+        session.commit()
+        group_id = group.id
+
+    for days in (0, -1):
+        response = client.post(
+            f"/admin/retention/cleanup?days={days}",
+            headers={"X-Admin-Key": "test-retention-key"}
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "days must be at least 1"
+
+    with Session(test_engine) as session:
+        assert session.get(Group, group_id) is not None
+
+    unauthorized = client.post(
+        "/admin/retention/cleanup?days=1",
+        headers={"X-Admin-Key": "wrong-key"}
+    )
+    assert unauthorized.status_code == 403
+    assert unauthorized.json()["detail"] == "Not authorized"
+
+
+def test_startup_configuration_guards():
+    import main
+
+    with pytest.raises(
+        RuntimeError, match="DEV_MODE must not be enabled with a non-SQLite database"
+    ):
+        main.check_startup_config(True, "postgresql://db.example/app", "")
+    with pytest.raises(
+        RuntimeError, match="DATABASE_URL must be set when DEV_MODE is false"
+    ):
+        main.check_startup_config(False, None, "")
+    with pytest.raises(
+        RuntimeError, match="DEV_MODE must not be enabled on Render"
+    ):
+        main.check_startup_config(True, None, "true")
+
+    for dev_mode, database_url, render_env in (
+        (True, "sqlite:///./local.db", ""),
+        (False, "postgresql://db.example/app", ""),
+        (False, "sqlite:///./configured.db", ""),
+        (True, None, ""),
+    ):
+        main.check_startup_config(dev_mode, database_url, render_env)

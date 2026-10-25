@@ -49,6 +49,11 @@ from upi import build_upi_link
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    check_startup_config(
+        DEV_MODE,
+        os.getenv("DATABASE_URL"),
+        os.getenv("RENDER")
+    )
     init_db()
     yield
 
@@ -56,6 +61,15 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Debt-Settle API", version="2.0.0", lifespan=lifespan)
 
 logger = logging.getLogger("debt_settle")
+
+
+def check_startup_config(dev_mode, database_url_env, render_env):
+    if dev_mode and database_url_env and not database_url_env.startswith("sqlite"):
+        raise RuntimeError("DEV_MODE must not be enabled with a non-SQLite database")
+    if not dev_mode and not database_url_env:
+        raise RuntimeError("DATABASE_URL must be set when DEV_MODE is false")
+    if dev_mode and render_env:
+        raise RuntimeError("DEV_MODE must not be enabled on Render")
 
 
 def rate_limit_key_func(request: Request) -> str:
@@ -919,6 +933,22 @@ def join_group_via_link(
 # Expenses & Debts Logging
 # -------------------------------------------------------------
 
+def require_active_group_members(session: Session, group_id: int, member_ids: List[int]) -> None:
+    if any(not isinstance(member_id, int) or isinstance(member_id, bool)
+           for member_id in member_ids):
+        raise HTTPException(400, "One or more members do not belong to this group")
+
+    members = session.exec(
+        select(GroupMember).where(GroupMember.id.in_(set(member_ids)))
+    ).all() if member_ids else []
+    active_group_member_ids = {
+        member.id for member in members
+        if member.group_id == group_id and member.active
+    }
+    if any(member_id not in active_group_member_ids for member_id in member_ids):
+        raise HTTPException(400, "One or more members do not belong to this group")
+
+
 @app.post("/groups/{group_id}/expenses/equal")
 def add_equal_expense(
     group_id: int,
@@ -929,6 +959,9 @@ def add_equal_expense(
     """Convenience endpoint: single payer, equal split among members."""
     membership = get_group_membership(group_id, current_user, session)
     check_group_not_frozen(group_id, session)
+    require_active_group_members(
+        session, group_id, [payload.paid_by, *payload.split_among]
+    )
 
     splits = compute_splits("equal", payload.split_among, payload.total_amount)
     payers = validate_and_compute_payers([{"member_id": payload.paid_by, "amount_paid": payload.total_amount}], payload.total_amount)
@@ -963,6 +996,13 @@ def add_expense_general(
     """Multi-payer and unequal split endpoint (equal, exact, percentage, shares)."""
     membership = get_group_membership(group_id, current_user, session)
     check_group_not_frozen(group_id, session)
+    member_ids = [
+        payer.get("member_id") for payer in payload.paid_by
+    ] + [
+        item.get("member_id") if isinstance(item, dict) else item
+        for item in payload.split_among
+    ]
+    require_active_group_members(session, group_id, member_ids)
 
     payers = validate_and_compute_payers(payload.paid_by, payload.total_amount)
     splits = compute_splits(payload.split_type, payload.split_among, payload.total_amount)
@@ -1040,6 +1080,9 @@ def add_debt(
     """Logs a direct 1-to-1 personal IOU."""
     get_group_membership(group_id, current_user, session)
     check_group_not_frozen(group_id, session)
+    require_active_group_members(
+        session, group_id, [payload.from_member_id, payload.to_member_id]
+    )
 
     if payload.from_member_id == payload.to_member_id:
         raise HTTPException(400, "Debtor and creditor cannot be the same member")
@@ -1508,7 +1551,9 @@ def trigger_retention_cleanup(
     x_admin_key: str = Header(default=""),
     session: Session = Depends(get_session)
 ):
-    if not RETENTION_ADMIN_KEY or x_admin_key != RETENTION_ADMIN_KEY:
+    if days < 1:
+        raise HTTPException(400, "days must be at least 1")
+    if not RETENTION_ADMIN_KEY or not secrets.compare_digest(x_admin_key, RETENTION_ADMIN_KEY):
         raise HTTPException(status_code=403, detail="Not authorized")
     deleted_ids = cleanup_expired_groups(session, retention_days=days)
     return {"status": "success", "deleted_group_ids": deleted_ids}
