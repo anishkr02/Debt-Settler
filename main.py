@@ -1551,9 +1551,12 @@ def trigger_retention_cleanup(
     x_admin_key: str = Header(default=""),
     session: Session = Depends(get_session)
 ):
+    if not RETENTION_ADMIN_KEY or not secrets.compare_digest(
+        x_admin_key.encode("utf-8"),
+        RETENTION_ADMIN_KEY.encode("utf-8")
+    ):
+        raise HTTPException(status_code=403, detail="Not authorized")
     if days < 1:
         raise HTTPException(400, "days must be at least 1")
-    if not RETENTION_ADMIN_KEY or not secrets.compare_digest(x_admin_key, RETENTION_ADMIN_KEY):
-        raise HTTPException(status_code=403, detail="Not authorized")
     deleted_ids = cleanup_expired_groups(session, retention_days=days)
     return {"status": "success", "deleted_group_ids": deleted_ids}

@@ -2109,6 +2109,53 @@ def test_retention_rejects_days_below_one_without_deleting_groups(monkeypatch):
     assert unauthorized.json()["detail"] == "Not authorized"
 
 
+def test_retention_checks_admin_key_before_invalid_days(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "RETENTION_ADMIN_KEY", "test-retention-key")
+    response = client.post(
+        "/admin/retention/cleanup?days=0",
+        headers={"X-Admin-Key": "wrong-key"}
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not authorized"
+
+
+def test_retention_validates_days_after_checking_correct_admin_key(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "RETENTION_ADMIN_KEY", "test-retention-key")
+    original_compare_digest = main.secrets.compare_digest
+    comparison_calls = []
+
+    def record_key_comparison(provided_key, configured_key):
+        comparison_calls.append((provided_key, configured_key))
+        return original_compare_digest(provided_key, configured_key)
+
+    monkeypatch.setattr(main.secrets, "compare_digest", record_key_comparison)
+    response = client.post(
+        "/admin/retention/cleanup?days=0",
+        headers={"X-Admin-Key": "test-retention-key"}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "days must be at least 1"
+    assert comparison_calls == [
+        (b"test-retention-key", b"test-retention-key")
+    ]
+
+
+def test_retention_non_ascii_admin_header_returns_forbidden_not_server_error(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "RETENTION_ADMIN_KEY", "test-retention-key")
+    response = client.post(
+        "/admin/retention/cleanup?days=1",
+        headers={"X-Admin-Key": "clé".encode("latin-1")}
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not authorized"
+
+
 def test_startup_configuration_guards():
     import main
 
