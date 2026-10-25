@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 import {
   ChevronRight, Users, RefreshCw, AlertCircle,
@@ -8,6 +8,7 @@ import {
 import InvitePanel from './InvitePanel';
 import InstallPrompt from './InstallPrompt';
 import { buildJoinUrl, copyText } from '../lib/joinLink';
+import { parseServerDate } from '../lib/dates';
 
 // ─── tiny shared input style ─────────────────────────────────────────────────
 const INPUT =
@@ -480,6 +481,13 @@ export default function DashboardScreen({ user, onSelectGroup }) {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const sortedGroups = useMemo(() => [...groups].sort((a, b) => {
+    const timeDifference = parseServerDate(b.last_activity_at || b.created_at).getTime()
+      - parseServerDate(a.last_activity_at || a.created_at).getTime();
+    return Number.isNaN(timeDifference) || timeDifference === 0
+      ? b.id - a.id
+      : timeDifference;
+  }), [groups]);
 
   const fetchGroups = useCallback(async () => {
     try {
@@ -518,6 +526,14 @@ export default function DashboardScreen({ user, onSelectGroup }) {
       if (document.visibilityState === 'visible') fetchGroups();
     }, 15000);
     return () => clearInterval(interval);
+  }, [fetchGroups]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') fetchGroups();
+    };
+    document.addEventListener('visibilitychange', refreshOnVisible);
+    return () => document.removeEventListener('visibilitychange', refreshOnVisible);
   }, [fetchGroups]);
 
   const handleCreated = async (id) => {
@@ -563,7 +579,7 @@ export default function DashboardScreen({ user, onSelectGroup }) {
           </div>
         ) : (
           <div className="space-y-2 pb-28">
-            {groups.map((g) => (
+            {sortedGroups.map((g) => (
               <button
                 key={g.id}
                 onClick={() => onSelectGroup(g.id)}

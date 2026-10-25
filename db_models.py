@@ -47,6 +47,7 @@ class GroupMember(SQLModel, table=True):
     upi_id: Optional[str] = None
     is_admin: bool = Field(default=False)
     active: bool = Field(default=True)
+    joined_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
     last_read_chat_id: Optional[int] = Field(default=None)
     last_seen_expense_id: Optional[int] = Field(default=None)
     last_seen_member_id: Optional[int] = Field(default=None)

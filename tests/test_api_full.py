@@ -2,8 +2,10 @@ import os
 os.environ["DEV_MODE"] = "true"
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 import pytest
+import time
 from datetime import datetime, timezone, timedelta
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlmodel import Session, select, create_engine, SQLModel
 from sqlmodel.pool import StaticPool
 
@@ -1715,6 +1717,133 @@ def test_group_list_includes_total_unread_count():
     assert item["unread_total_count"] == (
         item["unread_chat_count"] + item["unread_expense_count"] + item["unread_member_count"]
     )
+
+
+def test_group_last_activity_tracks_new_activity_but_not_reads():
+    admin_headers = _dev_user("activity_admin")
+    member_headers = _dev_user("activity_member")
+    _dev_user("activity_joiner")
+    first_group_id = client.post(
+        "/groups", json={"name": "Activity first"}, headers=admin_headers
+    ).json()["id"]
+    time.sleep(0.02)
+    second_group_id = client.post(
+        "/groups", json={"name": "Activity second"}, headers=admin_headers
+    ).json()["id"]
+    initial_groups = client.get("/groups", headers=admin_headers).json()
+    initial_activity = {item["id"]: item["last_activity_at"] for item in initial_groups}
+    assert datetime.fromisoformat(initial_activity[second_group_id]) > datetime.fromisoformat(
+        initial_activity[first_group_id]
+    )
+    time.sleep(0.02)
+    client.post(
+        f"/groups/{first_group_id}/invite",
+        json={"method": "username", "username": "activity_member"},
+        headers=admin_headers
+    )
+
+    def listed_groups():
+        response = client.get("/groups", headers=admin_headers)
+        assert response.status_code == 200
+        items = response.json()
+        assert all("last_activity_at" in item for item in items)
+        return {item["id"]: item for item in items}
+
+    def activity_time(value):
+        parsed = datetime.fromisoformat(value)
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+    groups = listed_groups()
+    first_activity = activity_time(groups[first_group_id]["last_activity_at"])
+    assert first_activity > activity_time(groups[first_group_id]["created_at"])
+
+    time.sleep(0.02)
+    assert client.post(
+        f"/groups/{first_group_id}/chat",
+        json={"body": "New group message"},
+        headers=admin_headers
+    ).status_code == 200
+    after_chat = listed_groups()
+    chat_activity = activity_time(after_chat[first_group_id]["last_activity_at"])
+    assert chat_activity > first_activity
+    assert after_chat[second_group_id]["last_activity_at"] == groups[second_group_id]["last_activity_at"]
+
+    before_reads = after_chat[first_group_id]["last_activity_at"]
+    assert client.get(f"/groups/{first_group_id}", headers=admin_headers).status_code == 200
+    assert client.post(f"/groups/{first_group_id}/chat/read", headers=member_headers).status_code == 200
+    assert client.post(
+        f"/groups/{first_group_id}/seen",
+        json={"section": "expenses"},
+        headers=member_headers
+    ).status_code == 200
+    assert listed_groups()[first_group_id]["last_activity_at"] == before_reads
+
+    members = client.get(f"/groups/{first_group_id}", headers=admin_headers).json()["members"]
+    admin_member_id = next(member["id"] for member in members if member["name"] == "activity_admin")
+    member_id = next(member["id"] for member in members if member["name"] == "activity_member")
+    time.sleep(0.02)
+    assert client.post(
+        f"/groups/{first_group_id}/expenses/equal",
+        json={
+            "description": "New activity expense",
+            "total_amount": 20,
+            "paid_by": admin_member_id,
+            "split_among": [admin_member_id, member_id]
+        },
+        headers=admin_headers
+    ).status_code == 200
+    after_expense = listed_groups()
+    expense_activity = activity_time(after_expense[first_group_id]["last_activity_at"])
+    assert expense_activity > activity_time(before_reads)
+    assert after_expense[second_group_id]["last_activity_at"] == groups[second_group_id]["last_activity_at"]
+
+    time.sleep(0.02)
+    settlement = client.post(f"/groups/{first_group_id}/settle", headers=admin_headers)
+    assert settlement.status_code == 200
+    transaction = settlement.json()["settlements"][0]
+    time.sleep(0.02)
+    marked_paid = client.post(
+        f"/settlements/{transaction['id']}/mark-paid", headers=member_headers
+    )
+    assert marked_paid.status_code == 200
+    after_paid = listed_groups()[first_group_id]["last_activity_at"]
+    assert activity_time(after_paid) > activity_time(
+        after_expense[first_group_id]["last_activity_at"]
+    )
+
+    time.sleep(0.02)
+    confirmed = client.post(
+        f"/settlements/{transaction['id']}/confirm", headers=admin_headers
+    )
+    assert confirmed.status_code == 200
+    after_confirm = listed_groups()[first_group_id]["last_activity_at"]
+    assert activity_time(after_confirm) > activity_time(after_paid)
+
+    before_join = listed_groups()[second_group_id]["last_activity_at"]
+    time.sleep(0.02)
+    joined = client.post(
+        f"/groups/{second_group_id}/invite",
+        json={"method": "username", "username": "activity_joiner"},
+        headers=admin_headers
+    )
+    assert joined.status_code == 200
+    after_join = listed_groups()[second_group_id]["last_activity_at"]
+    assert activity_time(after_join) > activity_time(before_join)
+    assert listed_groups()[first_group_id]["last_activity_at"] == after_confirm
+
+    with Session(test_engine) as session:
+        session.execute(
+            text(
+                "INSERT INTO groupmember "
+                "(group_id, user_id, upi_id, is_admin, active, last_read_chat_id, "
+                "last_seen_expense_id, last_seen_member_id, joined_at) "
+                "VALUES (:group_id, NULL, NULL, 0, 1, NULL, NULL, NULL, NULL)"
+            ),
+            {"group_id": second_group_id}
+        )
+        session.commit()
+    after_legacy_member = listed_groups()[second_group_id]
+    assert after_legacy_member["last_activity_at"] == after_join
 
 
 def test_group_rename_is_admin_only_and_updates_group_lists():

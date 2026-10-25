@@ -643,6 +643,36 @@ def create_group(
     }
 
 
+def get_group_last_activity(session: Session, group: Group) -> datetime:
+    candidates = [group.created_at]
+    candidates.extend([
+        session.exec(
+            select(func.max(ChatMessageDB.created_at)).where(ChatMessageDB.group_id == group.id)
+        ).one(),
+        session.exec(
+            select(func.max(ExpenseDB.created_at)).where(ExpenseDB.group_id == group.id)
+        ).one(),
+    ])
+    settlement_activity = session.exec(
+        select(
+            func.max(SettlementTransactionDB.created_at),
+            func.max(SettlementTransactionDB.paid_at),
+            func.max(SettlementTransactionDB.confirmed_at),
+        ).where(SettlementTransactionDB.group_id == group.id)
+    ).one()
+    candidates.extend(settlement_activity)
+    candidates.append(session.exec(
+        select(func.max(GroupMember.joined_at)).where(GroupMember.group_id == group.id)
+    ).one())
+
+    normalized = [
+        value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        for value in candidates
+        if value is not None
+    ]
+    return max(normalized)
+
+
 @app.get("/groups")
 def list_my_groups(
     current_user: User = Depends(get_current_user),
@@ -675,6 +705,7 @@ def list_my_groups(
                 "is_frozen": is_frozen,
                 "fully_settled_at": group.fully_settled_at,
                 "created_at": group.created_at,
+                "last_activity_at": get_group_last_activity(session, group),
                 "unread_chat_count": unread_chat_count,
                 "unread_expense_count": unread_expense_count,
                 "unread_member_count": unread_member_count,
