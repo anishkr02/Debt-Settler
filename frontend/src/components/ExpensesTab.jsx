@@ -63,8 +63,14 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
 
   const fetchExpenses = useCallback(async () => {
     try {
-      const data = await api.listExpenses(group.id);
-      setExpenses(data);
+      const [expenseData, debtData] = await Promise.all([
+        api.listExpenses(group.id),
+        api.listDebts(group.id),
+      ]);
+      setExpenses([
+        ...expenseData.map((expense) => ({ ...expense, kind: 'expense' })),
+        ...debtData.map((debt) => ({ ...debt, kind: 'iou' })),
+      ]);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -77,9 +83,15 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
     let active = true;
     const loadExpenses = async () => {
       try {
-        const data = await api.listExpenses(group.id);
+        const [expenseData, debtData] = await Promise.all([
+          api.listExpenses(group.id),
+          api.listDebts(group.id),
+        ]);
         if (active) {
-          setExpenses(data);
+          setExpenses([
+            ...expenseData.map((expense) => ({ ...expense, kind: 'expense' })),
+            ...debtData.map((debt) => ({ ...debt, kind: 'iou' })),
+          ]);
           setError('');
         }
       } catch (err) {
@@ -234,7 +246,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
                 onClick={() => setShowAddIOU(true)}
                 className="secondary-btn bg-brand-50 text-brand-800 hover:bg-brand-100"
               >
-                + Add IOU
+                + Add loan
               </button>
               <button
                 onClick={() => { setPaidBy(defaultPayerId); setShowAddExpense(true); }}
@@ -298,58 +310,75 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
           )}
           {sortedExpenses.map((e) => (
             <div
-              key={e.id}
+              key={`${e.kind}-${e.id}`}
               className="content-card space-y-3 transition hover:border-slate-300"
             >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h4 className="font-bold text-sm text-slate-900">{e.description}</h4>
-                  <p className="text-[11px] text-slate-400">
-                    {formatDateTime(e.created_at)} • Split:{' '}
-                    <span className="capitalize font-semibold text-slate-600">{e.split_type}</span>
+              {e.kind === 'iou' ? (
+                <div className="space-y-1">
+                  <span className="inline-flex rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-bold text-brand-700">
+                    Loan
+                  </span>
+                  <p className="text-sm font-semibold text-slate-900">
+                    @{e.to_username} lent ₹{e.amount} to @{e.from_username}
                   </p>
-                  {e.created_by_username && (
-                    <p className="text-[11px] text-slate-500">
-                      Added by @{e.created_by_username}
-                    </p>
-                  )}
+                  {e.note && <p className="text-xs text-slate-600">{e.note}</p>}
+                  <p className="text-[11px] text-slate-400">
+                    Added {formatDateTime(e.created_at)}
+                  </p>
                 </div>
-                <span className="text-base font-black text-slate-900">₹{e.total_amount.toFixed(2)}</span>
-              </div>
-
-              {/* Payers and Splits breakdown */}
-              <div className="pt-2.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Paid By:
-                  </span>
-                  <div className="space-y-1">
-                    {e.payers.map((p, idx) => (
-                      <span key={idx} className="block text-slate-700 font-medium">
-                        @{memberMap[p.member_id] || `Member ${p.member_id}`}:{' '}
-                        <strong className="text-slate-900 font-bold">₹{p.amount_paid.toFixed(2)}</strong>
-                      </span>
-                    ))}
+              ) : (
+                <>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900">{e.description}</h4>
+                      <p className="text-[11px] text-slate-400">
+                        {formatDateTime(e.created_at)} • Split:{' '}
+                        <span className="capitalize font-semibold text-slate-600">{e.split_type}</span>
+                      </p>
+                      {e.created_by_username && (
+                        <p className="text-[11px] text-slate-500">
+                          Added by @{e.created_by_username}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-base font-black text-slate-900">₹{e.total_amount.toFixed(2)}</span>
                   </div>
-                </div>
 
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Split Among:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {e.splits.map((s, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center gap-1 bg-cream-50 border border-slate-200 text-slate-700 text-[11px] font-medium px-2 py-0.5 rounded-lg"
-                      >
-                        <span>@{memberMap[s.member_id] || s.member_id}</span>
-                        <strong className="text-slate-900">₹{s.share_amount.toFixed(2)}</strong>
+                  {/* Payers and Splits breakdown */}
+                  <div className="pt-2.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                        Paid By:
                       </span>
-                    ))}
+                      <div className="space-y-1">
+                        {e.payers.map((p, idx) => (
+                          <span key={idx} className="block text-slate-700 font-medium">
+                            @{memberMap[p.member_id] || `Member ${p.member_id}`}:{' '}
+                            <strong className="text-slate-900 font-bold">₹{p.amount_paid.toFixed(2)}</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                        Split Among:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {e.splits.map((s, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 bg-cream-50 border border-slate-200 text-slate-700 text-[11px] font-medium px-2 py-0.5 rounded-lg"
+                          >
+                            <span>@{memberMap[s.member_id] || s.member_id}</span>
+                            <strong className="text-slate-900">₹{s.share_amount.toFixed(2)}</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -524,13 +553,13 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="panel-card max-w-md w-full p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">Record Personal IOU</h3>
+              <h3 className="text-base font-bold text-slate-900">Add a loan between two people</h3>
               <button onClick={() => setShowAddIOU(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">✕</button>
             </div>
 
             <form onSubmit={handleCreateIOU} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Debtor (Who Owes) *</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Who took the money?</label>
                 <select
                   value={fromMember}
                   onChange={(e) => setFromMember(e.target.value)}
@@ -545,7 +574,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Creditor (Owed To) *</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Who gave the money?</label>
                 <select
                   value={toMember}
                   onChange={(e) => setToMember(e.target.value)}
@@ -596,7 +625,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
                   disabled={submitting}
                   className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl disabled:opacity-50"
                 >
-                  {submitting ? 'Saving...' : 'Record IOU'}
+                  {submitting ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>

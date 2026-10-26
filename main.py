@@ -1070,6 +1070,39 @@ def list_expenses(
     return result
 
 
+@app.get("/groups/{group_id}/debts")
+def list_group_debts(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """List personal loans logged for a group."""
+    get_group_membership(group_id, current_user, session)
+    debts = session.exec(
+        select(PersonalDebtDB)
+        .where(PersonalDebtDB.group_id == group_id)
+        .order_by(PersonalDebtDB.created_at, PersonalDebtDB.id)
+    ).all()
+    user_by_member = dict(session.exec(
+        select(GroupMember.id, User.username)
+        .join(User, GroupMember.user_id == User.id)
+        .where(GroupMember.group_id == group_id)
+    ).all())
+    return [
+        {
+            "id": debt.id,
+            "from_member_id": debt.from_member_id,
+            "to_member_id": debt.to_member_id,
+            "from_username": user_by_member.get(debt.from_member_id),
+            "to_username": user_by_member.get(debt.to_member_id),
+            "amount": debt.amount,
+            "note": debt.note,
+            "created_at": debt.created_at,
+        }
+        for debt in debts
+    ]
+
+
 @app.post("/groups/{group_id}/debts")
 def add_debt(
     group_id: int,

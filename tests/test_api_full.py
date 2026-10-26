@@ -2179,3 +2179,79 @@ def test_startup_configuration_guards():
         (True, None, ""),
     ):
         main.check_startup_config(dev_mode, database_url, render_env)
+
+
+def test_group_debts_list_returns_usernames_and_expenses_response_is_unchanged():
+    admin_headers = _dev_user("debt_list_admin")
+    member_headers = _dev_user("debt_list_member")
+    group_id = client.post(
+        "/groups", json={"name": "Debt list"}, headers=admin_headers
+    ).json()["id"]
+    client.post(
+        f"/groups/{group_id}/invite",
+        json={"method": "username", "username": "debt_list_member"},
+        headers=admin_headers
+    )
+    members = client.get(f"/groups/{group_id}", headers=admin_headers).json()["members"]
+    member_ids = {member["name"]: member["id"] for member in members}
+    from_member_id = member_ids["debt_list_member"]
+    to_member_id = member_ids["debt_list_admin"]
+
+    expense = client.post(
+        f"/groups/{group_id}/expenses/equal",
+        json={
+            "description": "Unchanged expense",
+            "total_amount": 12,
+            "paid_by": to_member_id,
+            "split_among": [from_member_id, to_member_id]
+        },
+        headers=admin_headers
+    )
+    assert expense.status_code == 200
+    expenses_before_debt = client.get(
+        f"/groups/{group_id}/expenses", headers=admin_headers
+    )
+    assert expenses_before_debt.status_code == 200
+
+    debt = client.post(
+        f"/groups/{group_id}/debts",
+        json={
+            "from_member_id": from_member_id,
+            "to_member_id": to_member_id,
+            "amount": 23.5,
+            "note": "Lunch cash"
+        },
+        headers=member_headers
+    )
+    assert debt.status_code == 200
+
+    debts = client.get(f"/groups/{group_id}/debts", headers=admin_headers)
+    assert debts.status_code == 200
+    assert debts.json() == [{
+        "id": debt.json()["id"],
+        "from_member_id": from_member_id,
+        "to_member_id": to_member_id,
+        "from_username": "debt_list_member",
+        "to_username": "debt_list_admin",
+        "amount": 23.5,
+        "note": "Lunch cash",
+        "created_at": debt.json()["created_at"],
+    }]
+
+    expenses_after_debt = client.get(
+        f"/groups/{group_id}/expenses", headers=admin_headers
+    )
+    assert expenses_after_debt.status_code == 200
+    assert expenses_after_debt.json() == expenses_before_debt.json()
+    assert len(expenses_after_debt.json()) == 1
+
+
+def test_non_member_cannot_list_group_debts():
+    admin_headers = _dev_user("debt_access_admin")
+    outsider_headers = _dev_user("debt_access_outsider")
+    group_id = client.post(
+        "/groups", json={"name": "Private debt list"}, headers=admin_headers
+    ).json()["id"]
+
+    response = client.get(f"/groups/{group_id}/debts", headers=outsider_headers)
+    assert response.status_code == 403

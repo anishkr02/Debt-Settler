@@ -189,6 +189,10 @@ class ApiClient {
     return this.request(`/groups/${groupId}/expenses`);
   }
 
+  async listDebts(groupId) {
+    return this.request(`/groups/${groupId}/debts`);
+  }
+
   async addDebt(groupId, { from_member_id, to_member_id, amount, note = '' }) {
     return this.request(`/groups/${groupId}/debts`, {
       method: 'POST',
