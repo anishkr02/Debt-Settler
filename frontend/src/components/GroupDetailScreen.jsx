@@ -13,7 +13,10 @@ import {
 export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
   const [group, setGroup] = useState(null);
   const [loadedGroupId, setLoadedGroupId] = useState(null);
-  const [activeTab, setActiveTab] = useState('expenses'); // expenses | members | balances | chat
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = new URLSearchParams(window.location.hash.slice(1)).get('tab');
+    return ['expenses', 'members', 'balances', 'chat'].includes(tab) ? tab : 'expenses';
+  }); // expenses | members | balances | chat
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -31,10 +34,11 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
       setError('');
     } catch (err) {
       setError(err.message);
+      if (err.status === 403 || err.status === 404) onBack();
     } finally {
       setLoading(false);
     }
-  }, [groupId]);
+  }, [groupId, onBack]);
 
   const handleRenameGroup = async () => {
     const trimmedName = nameDraft.trim();
@@ -64,7 +68,10 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
           setError('');
         }
       } catch (err) {
-        if (active) setError(err.message);
+        if (active) {
+          setError(err.message);
+          if (err.status === 403 || err.status === 404) onBack();
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -73,7 +80,17 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
     return () => {
       active = false;
     };
-  }, [groupId]);
+  }, [groupId, onBack]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    params.set('tab', activeTab);
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${window.location.search}#${params.toString()}`
+    );
+  }, [activeTab, groupId]);
 
   useEffect(() => {
     const interval = setInterval(() => {

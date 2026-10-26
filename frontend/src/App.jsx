@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from './api/client';
 import AuthScreen from './components/AuthScreen';
 import ConsentScreen from './components/ConsentScreen';
@@ -16,9 +16,19 @@ import {
 const JOIN_KEY_HASH = '#join=';
 const JOIN_STORAGE_KEY = 'debt_settle_pending_join';
 
+function getGroupIdFromHash(hash) {
+  if (hash.startsWith(JOIN_KEY_HASH) || hash === '#privacy') return null;
+  const match = hash.match(/(?:^#|&)group=(\d+)(?:&|$)/);
+  if (!match) return null;
+  const groupId = Number(match[1]);
+  return Number.isSafeInteger(groupId) && groupId > 0 ? groupId : null;
+}
+
 export default function App() {
   const [user, setUser] = useState(api.currentUser);
-  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState(
+    () => getGroupIdFromHash(window.location.hash)
+  );
   // { type: 'success' | 'error', text } shown under the header
   const [notice, setNotice] = useState(null);
   const [showPrivacy, setShowPrivacy] = useState(
@@ -31,6 +41,36 @@ export default function App() {
   const profileMenuRef = useRef(null);
 
   const feedbackUrl = import.meta.env.VITE_FEEDBACK_URL;
+
+  const handleOpenGroup = useCallback((groupId) => {
+    window.history.pushState(
+      null,
+      '',
+      `${window.location.pathname}${window.location.search}#group=${groupId}`
+    );
+    setSelectedGroupId(groupId);
+  }, []);
+
+  const handleBackToDashboard = useCallback(() => {
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${window.location.search}`
+    );
+    setSelectedGroupId(null);
+  }, []);
+
+  useEffect(() => {
+    const syncSelectedGroup = () => {
+      setSelectedGroupId(getGroupIdFromHash(window.location.hash));
+    };
+    window.addEventListener('popstate', syncSelectedGroup);
+    window.addEventListener('hashchange', syncSelectedGroup);
+    return () => {
+      window.removeEventListener('popstate', syncSelectedGroup);
+      window.removeEventListener('hashchange', syncSelectedGroup);
+    };
+  }, []);
 
   // Listen to popstate / hash for /privacy
   useEffect(() => {
@@ -86,7 +126,7 @@ export default function App() {
             ? "You're already in this group."
             : 'You joined the group from your invite link!',
         });
-        if (res.group_id) setSelectedGroupId(res.group_id);
+        if (res.group_id) handleOpenGroup(res.group_id);
       } catch (err) {
         setNotice({ type: 'error', text: `Couldn't join the group: ${err.message}` });
       } finally {
@@ -95,7 +135,7 @@ export default function App() {
         joinInFlight.current = false;
       }
     })();
-  }, [user]);
+  }, [user, handleOpenGroup]);
 
   // Session validation
   useEffect(() => {
@@ -159,7 +199,7 @@ export default function App() {
     api.clearSession();
     updateAppBadge(0);
     setUser(null);
-    setSelectedGroupId(null);
+    handleBackToDashboard();
     setProfileMenuOpen(false);
     setShowDeleteModal(false);
   };
@@ -222,7 +262,7 @@ export default function App() {
       <header className="bg-cream-100/95 border-b border-slate-200/80 sticky top-0 z-30 shadow-xs backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div
-            onClick={() => setSelectedGroupId(null)}
+            onClick={handleBackToDashboard}
             className="flex items-center gap-2.5 cursor-pointer group"
           >
             <div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-md shadow-brand-600/20 group-hover:scale-105 transition">
@@ -345,14 +385,15 @@ export default function App() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">
         {selectedGroupId ? (
           <GroupDetailScreen
+            key={selectedGroupId}
             groupId={selectedGroupId}
             currentUser={user}
-            onBack={() => setSelectedGroupId(null)}
+            onBack={handleBackToDashboard}
           />
         ) : (
           <DashboardScreen
             user={user}
-            onSelectGroup={(id) => setSelectedGroupId(id)}
+            onSelectGroup={handleOpenGroup}
           />
         )}
       </main>
