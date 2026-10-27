@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { TrendingUp, TrendingDown, CheckCircle2, RefreshCw, AlertCircle } from 'lucide-react';
+import ExpenseSummary from './ExpenseSummary';
 
 export default function BalancesTab({ group }) {
   const [balances, setBalances] = useState({});
+  const [summaryData, setSummaryData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const fetchBalances = useCallback(async () => {
+    setSummaryData(null);
+    const summaryRequests = Promise.allSettled([
+      api.listExpenses(group.id),
+      api.listDebts(group.id),
+    ]);
     try {
       const data = await api.getBalances(group.id);
       setBalances(data);
@@ -17,11 +24,24 @@ export default function BalancesTab({ group }) {
     } finally {
       setLoading(false);
     }
+
+    const [expenseResult, debtResult] = await summaryRequests;
+    if (expenseResult.status === 'fulfilled' && debtResult.status === 'fulfilled') {
+      setSummaryData({
+        groupId: group.id,
+        expenses: expenseResult.value,
+        debts: debtResult.value,
+      });
+    }
   }, [group.id]);
 
   useEffect(() => {
     let active = true;
     const loadBalances = async () => {
+      const summaryRequests = Promise.allSettled([
+        api.listExpenses(group.id),
+        api.listDebts(group.id),
+      ]);
       try {
         const data = await api.getBalances(group.id);
         if (active) {
@@ -32,6 +52,15 @@ export default function BalancesTab({ group }) {
         if (active) setError(err.message);
       } finally {
         if (active) setLoading(false);
+      }
+
+      const [expenseResult, debtResult] = await summaryRequests;
+      if (active && expenseResult.status === 'fulfilled' && debtResult.status === 'fulfilled') {
+        setSummaryData({
+          groupId: group.id,
+          expenses: expenseResult.value,
+          debts: debtResult.value,
+        });
       }
     };
     loadBalances();
@@ -162,6 +191,13 @@ export default function BalancesTab({ group }) {
           </div>
         )}
       </div>
+      {summaryData?.groupId === group.id && (
+        <ExpenseSummary
+          expenses={summaryData.expenses}
+          debts={summaryData.debts}
+          members={group.members}
+        />
+      )}
     </div>
   );
 }

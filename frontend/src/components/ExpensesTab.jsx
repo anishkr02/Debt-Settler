@@ -2,14 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 import { Plus, Receipt, AlertCircle, RefreshCw, Lock } from 'lucide-react';
 import { formatDateTime, parseServerDate } from '../lib/dates';
-import ExpenseSummary from './ExpenseSummary';
 
 export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
   const myMember = group.members.find((m) => m.name === currentUser?.username);
   const defaultPayerId = myMember ? myMember.id : (group.members[0]?.id || '');
 
-  const [expenses, setExpenses] = useState([]);
-  const [debts, setDebts] = useState([]);
   const [expenseFeed, setExpenseFeed] = useState([]);
   const [sortOrder, setSortOrder] = useState(() => {
     try {
@@ -70,8 +67,6 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
         api.listExpenses(group.id),
         api.listDebts(group.id),
       ]);
-      setExpenses(expenseData);
-      setDebts(debtData);
       setExpenseFeed([
         ...expenseData.map((expense) => ({ ...expense, kind: 'expense' })),
         ...debtData.map((debt) => ({ ...debt, kind: 'iou' })),
@@ -93,8 +88,6 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
           api.listDebts(group.id),
         ]);
         if (active) {
-          setExpenses(expenseData);
-          setDebts(debtData);
           setExpenseFeed([
             ...expenseData.map((expense) => ({ ...expense, kind: 'expense' })),
             ...debtData.map((debt) => ({ ...debt, kind: 'iou' })),
@@ -274,8 +267,6 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
         </div>
       )}
 
-      <ExpenseSummary expenses={expenses} debts={debts} members={group.members} />
-
       {/* Expenses Feed */}
       {loading ? (
         <div className="content-card py-12 text-center text-slate-400">
@@ -328,7 +319,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
                     Loan
                   </span>
                   <p className="text-sm font-semibold text-slate-900">
-                    @{e.to_username} lent ₹{e.amount} to @{e.from_username}
+                    @{e.to_username} lent ₹{e.amount.toFixed(2)} to @{e.from_username}
                   </p>
                   {e.note && <p className="text-xs text-slate-600">{e.note}</p>}
                   <p className="text-[11px] text-slate-400">

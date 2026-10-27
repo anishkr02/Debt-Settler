@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { buildExpenseSummary } from '../lib/expenseSummary';
 
 function formatAmount(amount) {
@@ -80,9 +81,22 @@ export default function ExpenseSummary({ expenses, debts, members }) {
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
-        className="w-full text-left text-sm font-bold text-ink-900"
+        className="flex w-full items-center justify-between gap-3 text-left text-sm font-bold text-ink-900"
       >
-        {expenseLabel}{summary.loanCount > 0 ? ` plus ${loanLabel}` : ''}
+        <span>
+          {expenseLabel}{summary.loanCount > 0 ? ` plus ${loanLabel}` : ''}
+          {!expanded && (
+            <span className="mt-1 block text-xs font-medium text-slate-500">
+              Tap to see how it adds up
+            </span>
+          )}
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 flex-shrink-0 text-slate-500 transition-transform ${
+            expanded ? 'rotate-180' : ''
+          }`}
+          aria-hidden="true"
+        />
       </button>
 
       {expanded && (
