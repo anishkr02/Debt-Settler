@@ -2,12 +2,15 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 import { Plus, Receipt, AlertCircle, RefreshCw, Lock } from 'lucide-react';
 import { formatDateTime, parseServerDate } from '../lib/dates';
+import ExpenseSummary from './ExpenseSummary';
 
 export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
   const myMember = group.members.find((m) => m.name === currentUser?.username);
   const defaultPayerId = myMember ? myMember.id : (group.members[0]?.id || '');
 
   const [expenses, setExpenses] = useState([]);
+  const [debts, setDebts] = useState([]);
+  const [expenseFeed, setExpenseFeed] = useState([]);
   const [sortOrder, setSortOrder] = useState(() => {
     try {
       const savedOrder = localStorage.getItem('debt_settle_expense_sort');
@@ -51,7 +54,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
     }
   }, [sortOrder]);
 
-  const sortedExpenses = useMemo(() => [...expenses].sort((a, b) => {
+  const sortedExpenses = useMemo(() => [...expenseFeed].sort((a, b) => {
     const timeDifference = parseServerDate(a.created_at).getTime()
       - parseServerDate(b.created_at).getTime();
     const idDifference = a.id - b.id;
@@ -59,7 +62,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
       ? idDifference
       : timeDifference;
     return sortOrder === 'newest' ? -chronologicalDifference : chronologicalDifference;
-  }), [expenses, sortOrder]);
+  }), [expenseFeed, sortOrder]);
 
   const fetchExpenses = useCallback(async () => {
     try {
@@ -67,7 +70,9 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
         api.listExpenses(group.id),
         api.listDebts(group.id),
       ]);
-      setExpenses([
+      setExpenses(expenseData);
+      setDebts(debtData);
+      setExpenseFeed([
         ...expenseData.map((expense) => ({ ...expense, kind: 'expense' })),
         ...debtData.map((debt) => ({ ...debt, kind: 'iou' })),
       ]);
@@ -88,7 +93,9 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
           api.listDebts(group.id),
         ]);
         if (active) {
-          setExpenses([
+          setExpenses(expenseData);
+          setDebts(debtData);
+          setExpenseFeed([
             ...expenseData.map((expense) => ({ ...expense, kind: 'expense' })),
             ...debtData.map((debt) => ({ ...debt, kind: 'iou' })),
           ]);
@@ -267,13 +274,15 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
         </div>
       )}
 
+      <ExpenseSummary expenses={expenses} debts={debts} members={group.members} />
+
       {/* Expenses Feed */}
       {loading ? (
         <div className="content-card py-12 text-center text-slate-400">
           <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-600" />
           <span className="text-xs font-medium">Loading expenses...</span>
         </div>
-      ) : expenses.length === 0 ? (
+      ) : expenseFeed.length === 0 ? (
         <div className="content-card py-12 text-center space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto">
             <Receipt className="w-6 h-6" />
@@ -285,7 +294,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {expenses.length >= 2 && (
+          {expenseFeed.length >= 2 && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="font-semibold text-slate-500">Sort by</span>
               {[
