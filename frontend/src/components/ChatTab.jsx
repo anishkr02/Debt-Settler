@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { Send, Lock, MessageSquare, RefreshCw, AlertCircle, Reply, X } from 'lucide-react';
-import { formatTime } from '../lib/dates';
+import { dayKey, formatDayLabel, formatTime } from '../lib/dates';
 
 const IS_COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
 
@@ -176,11 +176,27 @@ export default function ChatTab({ group, currentUser, onRead }) {
             <p className="text-xs font-medium">No messages yet. Send a message to coordinate with group members!</p>
           </div>
         ) : (
-          messages.map((m) => {
+          messages.map((m, index) => {
             const isMe = m.sender_username === currentUser.username;
+            const currentDay = dayKey(m.created_at);
+            const previousDay = index === 0 ? null : dayKey(messages[index - 1].created_at);
+            const dayLabel = index === 0 || currentDay !== previousDay
+              ? formatDayLabel(m.created_at)
+              : '';
             return (
+              <React.Fragment key={m.id}>
+                {dayLabel && (
+                  <div
+                    role="separator"
+                    aria-label={dayLabel}
+                    className="flex justify-center py-1"
+                  >
+                    <span className="rounded-full bg-slate-200/80 px-3 py-1 text-[11px] font-semibold text-slate-500 select-none">
+                      {dayLabel}
+                    </span>
+                  </div>
+                )}
               <div
-                key={m.id}
                 id={`chat-msg-${m.id}`}
                 className={`group flex flex-col ${isMe ? 'items-end' : 'items-start'} ${
                   highlightId === m.id ? 'rounded-xl ring-2 ring-brand-400 ring-offset-2 transition' : ''
@@ -227,6 +243,7 @@ export default function ChatTab({ group, currentUser, onRead }) {
                   </button>
                 </div>
               </div>
+              </React.Fragment>
             );
           })
         )}
