@@ -5,6 +5,7 @@ import {
   ShieldAlert, RefreshCw, AlertCircle, QrCode, Check, Copy 
 } from 'lucide-react';
 import QRCode from 'qrcode';
+import { APP_NAME_UPPER } from '../lib/brand';
 
 export default function SettleModal({ group, currentUser, onClose, onSettlementUpdated }) {
   const [data, setData] = useState(null);
@@ -166,7 +167,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
               <Zap className="w-5 h-5 fill-current" />
             </div>
             <div>
-              <p className="eyebrow mb-1">DEBT-SETTLE</p>
+              <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
               <h3 className="text-lg font-bold text-slate-900">Settlement Dashboard</h3>
               <p className="text-xs text-slate-500 font-medium">Optimal payments & UPI verification</p>
             </div>
@@ -409,7 +410,7 @@ export default function SettleModal({ group, currentUser, onClose, onSettlementU
         {qrModalTx && (
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
             <div className="panel-card max-w-xs w-full p-6 text-center space-y-4 animate-in zoom-in-95 duration-150">
-              <p className="eyebrow">DEBT-SETTLE</p>
+              <p className="eyebrow">{APP_NAME_UPPER}</p>
               <h4 className="font-black text-ink-900 text-sm">Scan to Pay via UPI</h4>
               <div className="p-3 bg-cream-50 rounded-2xl border border-slate-200 inline-block">
                 {qrLoading ? (

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { api } from '../api/client';
 import { auth, googleProvider, signInWithPopup } from '../api/firebase';
 import { Wallet, Sparkles } from 'lucide-react';
+import { APP_NAME_UPPER } from '../lib/brand';
 
 export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
   const isDevMode = import.meta.env.VITE_DEV_MODE === 'true';
@@ -130,7 +131,7 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-ink-900 text-white shadow-soft mb-4">
           <Wallet className="w-8 h-8" />
         </div>
-        <p className="eyebrow mb-2">DEBT-SETTLE</p>
+        <p className="eyebrow mb-2">{APP_NAME_UPPER}</p>
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">Sign in</h1>
         <p className="mt-2 text-sm text-slate-600 font-medium">
           Group expense splitting with minimum-transaction settlement & UPI links.

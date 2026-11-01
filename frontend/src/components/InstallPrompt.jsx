@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { APP_NAME } from '../lib/brand';
 
 const DISMISSED_KEY = 'debt_settle_install_dismissed';
 
@@ -56,7 +57,7 @@ export default function InstallPrompt() {
   return (
     <section className="content-card mx-1 mb-4 flex items-center justify-between gap-3 bg-cream-50 p-4">
       <div className="min-w-0 text-sm font-semibold text-ink-900">
-        {isIOS ? 'Tap the Share button, then Add to Home Screen' : 'Install Debt-Settle on your phone'}
+        {isIOS ? 'Tap the Share button, then Add to Home Screen' : `Install ${APP_NAME} on your phone`}
       </div>
       {isIOS ? (
         <button onClick={dismiss} className="min-h-[44px] rounded-xl bg-brand-600 px-4 text-sm font-bold text-white">

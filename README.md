@@ -1,11 +1,11 @@
-# Debt-Settle
+# Ud'dhar
 Group Expense Splitter with Minimum-Transaction Settlement & UPI Deep-Links
 
 ## 1. Problem Statement
 
 When a group of people share expenses over time — a hostel mess, a trip, a shared flat — money doesn't flow cleanly. Different people pay for different things at different times: one person pays for lunch, another for travel, another fronts cash for a small errand that gets partially spent. By the end of a period (a trip, a month of mess bills), nobody actually remembers who owes what, and if everyone tries to settle up individually — "you owe me for lunch, I owe you for travel, he owes you for the room" — you end up with far more transactions than necessary, several of which cancel each other out.
 
-The core problem Debt-Settle solves:
+The core problem Ud'dhar solves:
 
 > Given a group's shared expenses (who paid, how much, who it was for) and any informal person-to-person debts, calculate each member's net balance, and then determine the minimum number of payments needed to settle everyone up completely — with a one-tap UPI payment link generated for each payment.
 

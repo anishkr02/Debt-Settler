@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 import { Plus, Receipt, AlertCircle, RefreshCw, Lock } from 'lucide-react';
 import { formatDateTime, parseServerDate } from '../lib/dates';
+import { APP_NAME_UPPER } from '../lib/brand';
 
 export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
   const myMember = group.members.find((m) => m.name === currentUser?.username);
@@ -229,7 +230,7 @@ export default function ExpensesTab({ group, currentUser, onExpenseLogged }) {
       {/* Action Bar */}
       <div className="content-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <p className="eyebrow mb-1">DEBT-SETTLE</p>
+          <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
           <h2 className="text-lg font-bold text-ink-900">Expenses & Debts</h2>
           <p className="text-xs text-slate-500 font-medium">Log shared purchases, dining, travel, or 1-on-1 IOUs.</p>
         </div>

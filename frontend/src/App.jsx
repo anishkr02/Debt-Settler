@@ -8,6 +8,7 @@ import GroupDetailScreen from './components/GroupDetailScreen';
 import PrivacyScreen from './components/PrivacyScreen';
 import DeleteAccountModal from './components/DeleteAccountModal';
 import { updateAppBadge } from './lib/appBadge';
+import { APP_NAME } from './lib/brand';
 import { 
   LogOut, Wallet, CheckCircle2, AlertCircle, Shield, 
   MessageSquare, Trash2, ChevronDown 
@@ -268,7 +269,7 @@ export default function App() {
             <div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-md shadow-brand-600/20 group-hover:scale-105 transition">
               <Wallet className="w-5 h-5" />
             </div>
-            <span className="font-black text-lg text-slate-900 tracking-tight">Debt-Settle</span>
+            <span className="font-black text-lg text-slate-900 tracking-tight">{APP_NAME}</span>
           </div>
 
           <div className="flex items-center gap-3">

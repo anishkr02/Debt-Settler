@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldCheck, ArrowLeft, Mail, Trash2, Clock, Eye, Database } from 'lucide-react';
+import { APP_NAME, APP_NAME_UPPER } from '../lib/brand';
 
 export default function PrivacyScreen({ onBack }) {
   const contactEmail = import.meta.env.VITE_CONTACT_EMAIL;
@@ -29,7 +30,7 @@ export default function PrivacyScreen({ onBack }) {
             <span>Back</span>
           </button>
           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            Debt-Settle Privacy
+            {APP_NAME} Privacy
           </span>
         </div>
 
@@ -40,10 +41,10 @@ export default function PrivacyScreen({ onBack }) {
             </div>
             <div>
               <div>
-                <p className="eyebrow mb-1">DEBT-SETTLE</p>
+                <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
                 <h1 className="text-xl sm:text-2xl font-black text-ink-900 tracking-tight">Privacy Policy</h1>
               </div>
-              <p className="text-xs text-slate-500 font-medium">Clear, plain-language privacy information for Debt-Settle.</p>
+              <p className="text-xs text-slate-500 font-medium">Clear, plain-language privacy information for {APP_NAME}.</p>
             </div>
           </div>
 
@@ -54,7 +55,7 @@ export default function PrivacyScreen({ onBack }) {
               <h2>What data is collected and stored</h2>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
-              Debt-Settle collects only the minimal data required to manage group expenses and calculate minimum-transaction settlements:
+              {APP_NAME} collects only the minimal data required to manage group expenses and calculate minimum-transaction settlements:
             </p>
             <ul className="list-disc pl-5 text-xs space-y-1.5 text-slate-600">
               <li><strong>Email address:</strong> Used for secure authentication and group invitation matching.</li>
@@ -111,7 +112,7 @@ export default function PrivacyScreen({ onBack }) {
             <p className="text-xs leading-relaxed text-slate-600">
               {contactEmail ? (
                 <>
-                  If you have any questions or privacy concerns regarding Debt-Settle, reach out to us at:{' '}
+                  If you have any questions or privacy concerns regarding {APP_NAME}, reach out to us at:{' '}
                   <a href={`mailto:${contactEmail}`} className="font-bold text-brand-700 hover:underline">
                     {contactEmail}
                   </a>
