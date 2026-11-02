@@ -1,6 +1,6 @@
 {
-  "name": "Ud'dhar",
-  "short_name": "Ud'dhar",
+  "name": "Ud\u2019dhar",
+  "short_name": "Ud\u2019dhar",
   "description": "Split group expenses and settle with minimum UPI payments",
   "start_url": "/",
   "scope": "/",
