@@ -7,6 +7,7 @@ import DashboardScreen from './components/DashboardScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
 import PrivacyScreen from './components/PrivacyScreen';
 import DeleteAccountModal from './components/DeleteAccountModal';
+import OfflineBanner from './components/OfflineBanner';
 import { updateAppBadge } from './lib/appBadge';
 import { APP_NAME } from './lib/brand';
 import { 
@@ -42,6 +43,12 @@ export default function App() {
   const profileMenuRef = useRef(null);
 
   const feedbackUrl = import.meta.env.VITE_FEEDBACK_URL;
+  const withOfflineBanner = (screen) => (
+    <>
+      <OfflineBanner />
+      {screen}
+    </>
+  );
 
   const handleOpenGroup = useCallback((groupId) => {
     window.history.pushState(
@@ -222,12 +229,12 @@ export default function App() {
 
   // If viewing privacy page
   if (showPrivacy) {
-    return <PrivacyScreen onBack={handleClosePrivacy} />;
+    return withOfflineBanner(<PrivacyScreen onBack={handleClosePrivacy} />);
   }
 
   // Auth screen
   if (!user) {
-    return (
+    return withOfflineBanner(
       <AuthScreen
         onLoginSuccess={(u) => setUser(u)}
         onViewPrivacy={handleOpenPrivacy}
@@ -237,7 +244,7 @@ export default function App() {
 
   // Consent screen: if user has no consent recorded yet
   if (!user.consented_at) {
-    return (
+    return withOfflineBanner(
       <ConsentScreen
         onConsentGiven={(updatedUser) => setUser(updatedUser)}
         onLogout={handleLogout}
@@ -248,7 +255,7 @@ export default function App() {
 
   // Choose username screen: if username not confirmed yet
   if (user.username_confirmed === false) {
-    return (
+    return withOfflineBanner(
       <ChooseUsernameScreen
         user={user}
         onUsernameConfirmed={(updatedUser) => setUser(updatedUser)}
@@ -257,7 +264,7 @@ export default function App() {
     );
   }
 
-  return (
+  return withOfflineBanner(
     <div className="min-h-screen bg-cream-100 flex flex-col font-sans">
       {/* Top Navbar */}
       <header className="bg-cream-100/95 border-b border-slate-200/80 sticky top-0 z-30 shadow-xs backdrop-blur">
