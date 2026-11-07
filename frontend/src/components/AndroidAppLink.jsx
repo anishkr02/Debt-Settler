@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { APP_NAME, APK_URL } from '../lib/brand';
 
-const DISMISSED_KEY = 'uddhar_apk_hint_dismissed';
+const HIDDEN_KEY = 'uddhar_apk_hint_hidden_session';
 
 export default function AndroidAppLink() {
   const [dismissed, setDismissed] = useState(() => {
     try {
-      return localStorage.getItem(DISMISSED_KEY) === 'true';
+      return sessionStorage.getItem(HIDDEN_KEY) === 'true';
     } catch {
       return false;
     }
@@ -25,7 +25,7 @@ export default function AndroidAppLink() {
 
   const hide = () => {
     try {
-      localStorage.setItem(DISMISSED_KEY, 'true');
+      sessionStorage.setItem(HIDDEN_KEY, 'true');
     } catch {
       // Keep the link dismissible when storage is unavailable.
     }
