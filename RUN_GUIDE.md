@@ -1,4 +1,4 @@
-# How to Run Debt-Settle Locally
+# How to Run Ud'dhar Locally
 
 This guide explains how to start both the backend API and the React frontend to test the full UI/UX.
 

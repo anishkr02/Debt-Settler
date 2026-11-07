@@ -1,5 +1,5 @@
 """
-Database tables for Debt-Settle (SQLModel = SQLAlchemy + Pydantic in one).
+Database tables for Ud'dhar (SQLModel = SQLAlchemy + Pydantic in one).
 """
 
 from datetime import datetime, timezone

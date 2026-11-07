@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api/client';
 import { ShieldCheck, ArrowRight, ExternalLink, LogOut, AlertCircle } from 'lucide-react';
+import { APP_NAME, APP_NAME_UPPER } from '../lib/brand';
 
 export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy }) {
   const [loading, setLoading] = useState(false);
@@ -28,10 +29,10 @@ export default function ConsentScreen({ onConsentGiven, onLogout, onViewPrivacy 
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-100 text-brand-800 shadow-sm mb-2">
             <ShieldCheck className="w-7 h-7" />
           </div>
-          <p className="eyebrow">DEBT-SETTLE</p>
+          <p className="eyebrow">{APP_NAME_UPPER}</p>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Privacy Consent</h1>
           <p className="text-xs text-slate-500 font-medium">
-            Please review and accept our privacy practices to continue to Debt-Settle.
+            Please review and accept our privacy practices to continue to {APP_NAME}.
           </p>
         </div>
 

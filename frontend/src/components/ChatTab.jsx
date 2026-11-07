@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { Send, Lock, MessageSquare, RefreshCw, AlertCircle, Reply, X } from 'lucide-react';
 import { dayKey, formatDayLabel, formatTime } from '../lib/dates';
+import { APP_NAME_UPPER } from '../lib/brand';
 
 const IS_COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
 
@@ -130,7 +131,7 @@ export default function ChatTab({ group, currentUser, onRead }) {
             <MessageSquare className="w-4 h-4" />
           </div>
           <div>
-            <p className="eyebrow mb-1">DEBT-SETTLE</p>
+            <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
             <h3 className="font-bold text-sm text-ink-900">Group Coordination Chat</h3>
             <span className="text-[11px] text-slate-400 font-medium">
               Visible to all {group.members.length} members

@@ -16,7 +16,7 @@ from models import Member
 def build_upi_link(
     payee: Member,
     amount: float,
-    note: str = "Debt-Settle payment",
+    note: str = "Ud'dhar payment",
 ) -> str:
     if not payee.upi_id:
         return "upi://pay"

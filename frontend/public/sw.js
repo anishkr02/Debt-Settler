@@ -30,7 +30,15 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('/'))
+      fetch(request)
+        .then((response) => {
+          if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
+            const clone = response.clone();
+            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put('/', clone)));
+          }
+          return response;
+        })
+        .catch(() => caches.match('/'))
     );
     return;
   }

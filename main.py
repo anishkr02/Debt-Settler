@@ -1,5 +1,5 @@
 """
-Debt-Settle API.
+Ud'dhar API.
 Complete FastAPI backend implementing identity, group invites, multi-payer/unequal expenses,
 hybrid debt settlement, two-step payment confirmation, cancel rules, group chat, and retention.
 """
@@ -58,7 +58,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Debt-Settle API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Ud'dhar API", version="2.0.0", lifespan=lifespan)
 
 logger = logging.getLogger("debt_settle")
 

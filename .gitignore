@@ -10,3 +10,7 @@ firebase-service-account.json
 *firebase-adminsdk*.json
 .env*.local
 *.local
+*.keystore
+*.jks
+signing-key-info.txt
+android/**/local.properties

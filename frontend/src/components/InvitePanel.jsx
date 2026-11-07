@@ -4,6 +4,7 @@ import { copyText } from '../lib/joinLink';
 import {
   AtSign, Link2, Mail, Search, Copy, Check, AlertCircle, RefreshCw,
 } from 'lucide-react';
+import { APP_NAME } from '../lib/brand';
 
 const INPUT =
   'w-full px-4 py-3 border border-slate-300 rounded-2xl text-sm bg-white ' +
@@ -268,7 +269,7 @@ export default function InvitePanel({
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1">
               <p className="font-bold">No user named @{searchedName}.</p>
               <p className="text-amber-700">
-                They need to sign in to Debt-Settle once first, or invite by email or link instead.
+                They need to sign in to {APP_NAME} once first, or invite by email or link instead.
               </p>
             </div>
           )}
@@ -379,7 +380,7 @@ export default function InvitePanel({
                 <p className="text-[11px] text-amber-700">Couldn&apos;t copy automatically. Select the link above and copy it.</p>
               )}
               <p className="text-[11px] text-slate-500">
-                Anyone who signs in to Debt-Settle and opens this link joins the group.
+                Anyone who signs in to {APP_NAME} and opens this link joins the group.
               </p>
             </div>
           ) : null}

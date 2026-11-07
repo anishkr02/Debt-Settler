@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { UserPlus, Shield, Check, X, Pencil, AlertCircle } from 'lucide-react';
 import InvitePanel from './InvitePanel';
 import { buildJoinUrl } from '../lib/joinLink';
+import { APP_NAME_UPPER } from '../lib/brand';
 
 const UPI_REGEX = /^[A-Za-z0-9._-]{2,64}@[A-Za-z][A-Za-z0-9]{1,63}$/;
 const MOBILE_REGEX = /^[6-9][0-9]{9}$/;
@@ -78,7 +79,7 @@ export default function MembersTab({ group, currentUser, onMemberUpdated }) {
       {/* Top Banner */}
       <div className="content-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <p className="eyebrow mb-1">DEBT-SETTLE</p>
+          <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
           <h2 className="text-lg font-bold text-ink-900">Group Members</h2>
           <p className="text-xs text-slate-500 font-medium">Manage members, UPI IDs or mobile numbers, and group invites.</p>
         </div>

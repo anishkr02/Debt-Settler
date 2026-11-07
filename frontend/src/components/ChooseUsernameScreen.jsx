@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api/client';
 import { AtSign, AlertCircle, RefreshCw, LogOut, Check } from 'lucide-react';
+import { APP_NAME_UPPER } from '../lib/brand';
 
 export default function ChooseUsernameScreen({ user, onUsernameConfirmed, onLogout }) {
   const [username, setUsername] = useState(user.username || '');
@@ -44,7 +45,7 @@ export default function ChooseUsernameScreen({ user, onUsernameConfirmed, onLogo
     <div className="screen-shell flex flex-col justify-center items-center font-sans">
       <div className="max-w-md w-full text-center mb-6">
         <p className="eyebrow mb-1.5">
-          DEBT-SETTLE
+          {APP_NAME_UPPER}
         </p>
         <h1 className="text-3xl font-black text-slate-900 leading-tight">
           Choose your username
