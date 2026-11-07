@@ -41,8 +41,8 @@ export default function PrivacyScreen({ onBack }) {
             </div>
             <div>
               <div>
-                <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
-                <h1 className="text-xl sm:text-2xl font-black text-ink-900 tracking-tight">Privacy Policy</h1>
+                <p className="eyebrow mb-1 text-sm sm:text-base">{APP_NAME_UPPER}</p>
+                <h1 className="text-lg sm:text-xl font-black text-ink-900 tracking-tight">Privacy Policy</h1>
               </div>
               <p className="text-xs text-slate-500 font-medium">Clear, plain-language privacy information for {APP_NAME}.</p>
             </div>
