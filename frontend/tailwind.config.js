@@ -44,11 +44,17 @@ export default {
       addComponents({
         '.eyebrow': {
           color: theme('colors.brand.600'),
-          fontSize: '10px',
+          fontSize: '11px',
           fontWeight: '900',
           letterSpacing: '0.22em',
           lineHeight: '1.5',
           textTransform: 'uppercase',
+          '@media (min-width: 640px)': {
+            fontSize: '13px',
+          },
+          '@media (min-width: 1024px)': {
+            fontSize: '14px',
+          },
         },
         '.screen-shell': {
           minHeight: '100vh',
