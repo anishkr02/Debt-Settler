@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { auth, googleProvider, signInWithPopup } from '../api/firebase';
 import { Wallet, Sparkles } from 'lucide-react';
 import { APP_NAME } from '../lib/brand';
+import AndroidAppLink from './AndroidAppLink';
 
 export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
   const isDevMode = import.meta.env.VITE_DEV_MODE === 'true';
@@ -310,6 +311,8 @@ export default function AuthScreen({ onLoginSuccess, onViewPrivacy }) {
           </>
         )}
       </div>
+
+      <AndroidAppLink />
     </div>
   );
 }

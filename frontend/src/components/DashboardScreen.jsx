@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import InvitePanel from './InvitePanel';
 import InstallPrompt from './InstallPrompt';
+import AndroidAppLink from './AndroidAppLink';
 import { buildJoinUrl, copyText } from '../lib/joinLink';
 import { parseServerDate } from '../lib/dates';
 import { APP_NAME } from '../lib/brand';
@@ -546,6 +547,7 @@ export default function DashboardScreen({ user, onSelectGroup }) {
   return (
     <div className="min-h-screen bg-cream-100 flex flex-col">
       <InstallPrompt />
+      <AndroidAppLink />
       {/* Header */}
       <section className="hero-card mx-1 mt-3 mb-6">
         <p className="eyebrow mb-2 text-brand-300">
