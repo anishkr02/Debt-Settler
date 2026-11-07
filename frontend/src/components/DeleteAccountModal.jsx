@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api/client';
 import { Trash2, AlertTriangle, AlertCircle, X } from 'lucide-react';
-import { APP_NAME_UPPER } from '../lib/brand';
+import { APP_NAME } from '../lib/brand';
 
 export default function DeleteAccountModal({ onClose, onDeleted }) {
   const [loading, setLoading] = useState(false);
@@ -31,7 +31,7 @@ export default function DeleteAccountModal({ onClose, onDeleted }) {
               <Trash2 className="w-5 h-5" />
             </div>
             <div>
-              <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
+              <p className="eyebrow mb-1">{APP_NAME}</p>
               <h3 className="text-base font-bold text-slate-900">Delete Account</h3>
               <p className="text-xs text-slate-500 font-medium">Permanent account removal</p>
             </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { APP_NAME_UPPER } from '../lib/brand';
+import { APP_NAME } from '../lib/brand';
 
 export default class ErrorBoundary extends React.Component {
   state = { hasError: false };
@@ -17,7 +17,7 @@ export default class ErrorBoundary extends React.Component {
       return (
         <main className="screen-shell flex items-center justify-center">
           <section className="panel-card w-full max-w-md p-6 text-center">
-            <p className="eyebrow mb-2">{APP_NAME_UPPER}</p>
+            <p className="eyebrow mb-2">{APP_NAME}</p>
             <h1 className="text-2xl font-black text-ink-900">Something went wrong</h1>
             <button
               type="button"

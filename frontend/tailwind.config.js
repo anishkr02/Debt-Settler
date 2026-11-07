@@ -46,9 +46,8 @@ export default {
           color: theme('colors.brand.600'),
           fontSize: '11px',
           fontWeight: '900',
-          letterSpacing: '0.22em',
+          letterSpacing: '0.08em',
           lineHeight: '1.5',
-          textTransform: 'uppercase',
           '@media (min-width: 640px)': {
             fontSize: '13px',
           },

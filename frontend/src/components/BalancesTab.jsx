@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { TrendingUp, TrendingDown, CheckCircle2, RefreshCw, AlertCircle } from 'lucide-react';
 import ExpenseSummary from './ExpenseSummary';
-import { APP_NAME_UPPER } from '../lib/brand';
+import { APP_NAME } from '../lib/brand';
 
 export default function BalancesTab({ group }) {
   const [balances, setBalances] = useState({});
@@ -95,7 +95,7 @@ export default function BalancesTab({ group }) {
       <div className="content-card space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="eyebrow mb-1">{APP_NAME_UPPER}</p>
+            <p className="eyebrow mb-1">{APP_NAME}</p>
             <h3 className="text-base font-bold text-ink-900">Member Net Positions</h3>
             <p className="text-xs text-slate-500">Live balance calculated fresh from group expenses and IOUs.</p>
           </div>

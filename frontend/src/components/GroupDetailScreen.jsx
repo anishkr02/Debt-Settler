@@ -9,7 +9,7 @@ import {
   ArrowLeft, Users, Receipt, Scale, MessageSquare, Zap, 
   Shield, CheckCircle2, Lock, RefreshCw, AlertCircle, Pencil, Check, X
 } from 'lucide-react';
-import { APP_NAME_UPPER } from '../lib/brand';
+import { APP_NAME } from '../lib/brand';
 
 export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
   const [group, setGroup] = useState(null);
@@ -163,7 +163,7 @@ export default function GroupDetailScreen({ groupId, currentUser, onBack }) {
           </button>
 
           <div>
-            <p className="eyebrow mb-1 text-brand-300">{APP_NAME_UPPER}</p>
+            <p className="eyebrow mb-1 text-brand-300">{APP_NAME}</p>
             <div className="flex items-center gap-2">
               {editingName ? (
                 <>

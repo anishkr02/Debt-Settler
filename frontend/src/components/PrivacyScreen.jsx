@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShieldCheck, ArrowLeft, Mail, Trash2, Clock, Eye, Database } from 'lucide-react';
-import { APP_NAME, APP_NAME_UPPER } from '../lib/brand';
+import { APP_NAME } from '../lib/brand';
 
 export default function PrivacyScreen({ onBack }) {
   const contactEmail = import.meta.env.VITE_CONTACT_EMAIL;
@@ -29,7 +29,7 @@ export default function PrivacyScreen({ onBack }) {
             <ArrowLeft className="w-4 h-4" />
             <span>Back</span>
           </button>
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <span className="text-xs font-semibold text-slate-400 tracking-wider">
             {APP_NAME} Privacy
           </span>
         </div>
@@ -41,7 +41,7 @@ export default function PrivacyScreen({ onBack }) {
             </div>
             <div>
               <div>
-                <p className="eyebrow mb-1 text-sm sm:text-base">{APP_NAME_UPPER}</p>
+                <p className="eyebrow mb-1 text-sm sm:text-base">{APP_NAME}</p>
                 <h1 className="text-lg sm:text-xl font-black text-ink-900 tracking-tight">Privacy Policy</h1>
               </div>
               <p className="text-xs text-slate-500 font-medium">Clear, plain-language privacy information for {APP_NAME}.</p>

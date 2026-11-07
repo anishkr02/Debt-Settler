@@ -9,7 +9,7 @@ import InvitePanel from './InvitePanel';
 import InstallPrompt from './InstallPrompt';
 import { buildJoinUrl, copyText } from '../lib/joinLink';
 import { parseServerDate } from '../lib/dates';
-import { APP_NAME, APP_NAME_UPPER } from '../lib/brand';
+import { APP_NAME } from '../lib/brand';
 
 // ─── tiny shared input style ─────────────────────────────────────────────────
 const INPUT =
@@ -420,8 +420,8 @@ function CreateGroupModal({ user, onClose, onCreated }) {
             </button>
           )}
           {step === 1 && (
-            <span className="text-xs font-bold text-brand-600 uppercase tracking-widest">
-              {APP_NAME_UPPER}
+            <span className="text-xs font-bold text-brand-600 tracking-wide">
+              {APP_NAME}
             </span>
           )}
           {step === 3 && (
@@ -549,7 +549,7 @@ export default function DashboardScreen({ user, onSelectGroup }) {
       {/* Header */}
       <section className="hero-card mx-1 mt-3 mb-6">
         <p className="eyebrow mb-2 text-brand-300">
-          {APP_NAME_UPPER}
+          {APP_NAME}
         </p>
         <h1 className="text-3xl font-black leading-tight text-white sm:text-4xl">Your groups</h1>
         <p className="mt-2 text-sm text-slate-300">Keep shared money simple.</p>
