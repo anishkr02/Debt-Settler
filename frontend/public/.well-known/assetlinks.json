@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "in.uddhar.app",
+    "sha256_cert_fingerprints": ["4E:03:9E:BC:CA:B2:47:8A:AF:31:2B:02:20:41:1F:CE:D0:73:E2:EF:BD:58:BB:FB:0C:1F:55:4F:E5:CE:5D:CF"]
+  }
+}]
